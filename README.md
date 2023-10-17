@@ -48,8 +48,8 @@ Excute
 
 # License & Declaration
 
-Please note that it's kinda buggy since it's purly my personal side project for fun. Portions of the source code (gltools, math3D) are copyrighted by Richard S. Wright Jr. 
+Please note that it's kinda buggy since it's purely my personal side project for fun. All rights of some source codes (gltools, math3D) are reserved by Richard S. Wright Jr. 
 
-Also, the texture of the F22 is by I. Mikhelevich (https://www.the-blueprints.com/blueprints/modernplanes/lockheed/45834/view/lockheed_martinboeing_f-22_raptor/) and the texture of the ground is from google. While the 3D models are made by myself.
+Also, the texture of the F22 is by [I. Mikhelevich](https://www.the-blueprints.com/blueprints/modernplanes/lockheed/45834/view/lockheed_martinboeing_f-22_raptor/) and the texture of the ground is from google. The rights of these mentioned materials are reserved by the providers, not me. While the 3D models are made by myself.
 
 This project is experimental and the cloudwork source code is under Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.
