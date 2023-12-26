@@ -4,7 +4,6 @@
     Date : 2021/1/5
 */
 
-
 #define _CRT_SECURE_NO_WARNINGS
 #define FREEGLUT_STATIC
 
@@ -13,6 +12,7 @@
 #include "Shader.h"
 #include "ObjModel.h"
 #include "Plane.h"
+#include "TextureGenerator.h"
 #include <chrono>
 
 bool showForce = true;
@@ -23,16 +23,15 @@ bool running = false;
 float sim_time = 0.0;
 GLfloat gravity = -9.81;
 
-
-M3DVector3f sun = { 0.0, 0.0, 1.0 };
-M3DVector3f sun_target = { 0.0, 0.5, 1.0 };
-M3DVector2f pmouse = {0.0,0.0};
+M3DVector3f sun = {0.0, 0.0, 1.0};
+M3DVector3f sun_target = {0.0, 0.5, 1.0};
+M3DVector2f pmouse = {0.0, 0.0};
 M3DMatrix33f sunRot, sunRotR;
 
 GLuint texture, map_texture;
-Shader* skyShader, * lightingShader;
+Shader *skyShader, *lightingShader;
 
-GLint windowWidth = 1024;               // window size
+GLint windowWidth = 1024; // window size
 GLint windowHeight = 512;
 
 GLuint fbo_shadow, shadow_texture, shadow_buffer;
@@ -42,15 +41,17 @@ M3DMatrix44f inverse_model_view, inverse_model_view_proj;
 M3DMatrix33f inverse_model_view_rot;
 
 M3DMatrix44f plane_coord;
-GLfloat planePos[] = {  0.0f, 0.0f, 0.0f, 1.0f };
-GLfloat cameraPos[] = { -11.218950, -11.772061, 1.376742 };
-GLfloat targetCamPos[] = { -11.218950, -11.772061, 1.376742 };
+GLfloat planePos[] = {0.0f, 0.0f, 0.0f, 1.0f};
+GLfloat cameraPos[] = {-11.218950, -11.772061, 1.376742};
+GLfloat targetCamPos[] = {-11.218950, -11.772061, 1.376742};
 GLdouble cameraZoom = 0.5;
 GLfloat camax = 1.0, camay = 0.7;
 
-ObjModel* map;
-F22* f22;
+ObjModel *map;
+F22 *f22;
 float throttleFactor = 0.0;
+
+TextureGenerator *texgen;
 
 chrono::high_resolution_clock::time_point pclock = chrono::high_resolution_clock::now();
 
@@ -67,7 +68,8 @@ void UpdateCameraPose()
     m3dScaleVector3(newZ, 0.04);
     m3dAddVectors3(&plane_coord[8], &plane_coord[8], newZ);
 
-    if(!running) return;
+    if (!running)
+        return;
 
     M3DVector3f camBack, camSpeed;
 
@@ -79,18 +81,18 @@ void UpdateCameraPose()
     camBack[1] = planePos[1] + plane_coord[9] * 5.0 - plane_coord[1] * (3.0 + throttleFactor * 2.0);
     camBack[2] = planePos[2] + plane_coord[10] * 5.0 - plane_coord[2] * (3.0 + throttleFactor * 2.0);
 
-    m3dScaleVector3(camBack, throttleFactor*0.9);
-    m3dScaleVector3(camSpeed, 1.0 - throttleFactor*0.9);
+    m3dScaleVector3(camBack, throttleFactor * 0.9);
+    m3dScaleVector3(camSpeed, 1.0 - throttleFactor * 0.9);
     m3dAddVectors3(targetCamPos, camSpeed, camBack);
 }
 
 void RenderShadowDepth(M3DMatrix44f mvp, M3DMatrix44f mv)
 {
-    
+
     // render shadhow buffer
-	glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo_shadow);
-	glBindTexture(GL_TEXTURE_2D, map_texture);
-    glViewport(0,0,2048,2048);
+    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo_shadow);
+    glBindTexture(GL_TEXTURE_2D, map_texture);
+    glViewport(0, 0, 2048, 2048);
 
     // get shadow buffer
     glMatrixMode(GL_PROJECTION);
@@ -101,12 +103,12 @@ void RenderShadowDepth(M3DMatrix44f mvp, M3DMatrix44f mv)
     glGetFloatv(GL_PROJECTION_MATRIX, projection_shadow);
 
     M3DVector3f up;
-    M3DVector3f zaxis = {0.0,0.0,1.0};
+    M3DVector3f zaxis = {0.0, 0.0, 1.0};
 
     m3dCrossProduct(up, sun_target, zaxis);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
-    gluLookAt(planePos[0]+sun_target[0]*5.0, planePos[1]+sun_target[1]*5.0, planePos[2]+sun_target[2]*5.0, planePos[0], planePos[1], planePos[2], 0.0, 0.0, 1.0);
+    gluLookAt(planePos[0] + sun_target[0] * 5.0, planePos[1] + sun_target[1] * 5.0, planePos[2] + sun_target[2] * 5.0, planePos[0], planePos[1], planePos[2], 0.0, 0.0, 1.0);
     glGetFloatv(GL_MODELVIEW_MATRIX, mv);
 
     m3dMatrixMultiply44(mvp, projection_shadow, mv);
@@ -118,7 +120,8 @@ void RenderShadowDepth(M3DMatrix44f mvp, M3DMatrix44f mv)
 
     f22->display(mv);
 
-    if (isShowingForce){
+    if (isShowingForce)
+    {
         glPushMatrix();
         f22->visualize(mv);
         glPopMatrix();
@@ -128,14 +131,18 @@ void RenderShadowDepth(M3DMatrix44f mvp, M3DMatrix44f mv)
     glTranslatef(10000.0, 0.0, -700.0);
     map->draw(2, GL_TRIANGLES);
     glPopMatrix();
-    
-	glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+
+    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
 }
 
 // Called to draw scene
 void RenderScene(void)
 {
-    
+    // delete texgen;
+    // texgen = new TextureGenerator(256, 256, 256);
+    // texgen->reloadShaders();
+    texgen->generateTexture();
+
     UpdateCameraPose();
     M3DMatrix44f model_view_proj_shadow, model_view_shadow;
     RenderShadowDepth(model_view_proj_shadow, model_view_shadow);
@@ -143,8 +150,8 @@ void RenderScene(void)
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
 
-    throttleFactor = throttleFactor*0.99 + f22->getThrottle()*0.01;
-    float zoom = (throttleFactor * 0.25 + 0.35)*cameraZoom;
+    throttleFactor = throttleFactor * 0.99 + f22->getThrottle() * 0.01;
+    float zoom = (throttleFactor * 0.25 + 0.35) * cameraZoom;
 
     if (windowWidth > windowHeight)
     {
@@ -195,11 +202,11 @@ void RenderScene(void)
 
         GLint model_view_loc = lightingShader->uniformLocation("ModelViewMatrix");
 
-        glActiveTexture(GL_TEXTURE0+0);
+        glActiveTexture(GL_TEXTURE0 + 0);
         glBindTexture(GL_TEXTURE_2D, texture);
         lightingShader->setUniform("sampler0", UNI_TEXTURE, 0, 1, 0U, 0);
 
-        glActiveTexture(GL_TEXTURE0+1);
+        glActiveTexture(GL_TEXTURE0 + 1);
         glBindTexture(GL_TEXTURE_2D, shadow_texture);
         lightingShader->setUniform("sampler1", UNI_TEXTURE, 0, 1, 0U, 1);
 
@@ -207,8 +214,9 @@ void RenderScene(void)
     }
 
     glUseProgram(0);
-    
-    if (isShowingForce){
+
+    if (isShowingForce)
+    {
         glPushMatrix();
         f22->visualize(model_view);
         glPopMatrix();
@@ -226,8 +234,11 @@ void RenderScene(void)
     GLint model_view_loc = skyShader->uniformLocation("ModelViewMatrix");
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, map_texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
     skyShader->setUniform("sampler0", UNI_TEXTURE, 0);
+
+    texgen->bindTexture(GL_TEXTURE0+1);
+    skyShader->setUniform("test", UNI_TEXTURE, 0, 1, 0U, 1);
 
     glColor3f(1.0f, 1.0f, 1.0f);
 
@@ -251,7 +262,7 @@ void RenderScene(void)
     // Flush drawing commands
     glutSwapBuffers();
 
-    printf("shader time: %f\n", (chrono::high_resolution_clock::now()-pclock).count()/1000000.0);
+    // printf("shader time: %f\n", (chrono::high_resolution_clock::now() - pclock).count() / 1000000.0);
     pclock = chrono::high_resolution_clock::now();
 }
 
@@ -259,16 +270,16 @@ void prepareFBO(GLenum textureNum, GLuint *fboname, GLuint *dbname, GLuint *text
 {
     // fbo
     glGenFramebuffersEXT(1, fboname);
-	glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, *fboname);
+    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, *fboname);
 
     // texture
     glGenTextures(1, texture);
-	glBindTexture(GL_TEXTURE_2D, *texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, internalformat, width, height, 0, format, type, NULL);
+    glBindTexture(GL_TEXTURE_2D, *texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, internalformat, width, height, 0, format, type, NULL);
 
-	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     // depth buffer
     glGenRenderbuffersEXT(1, dbname);
@@ -277,24 +288,24 @@ void prepareFBO(GLenum textureNum, GLuint *fboname, GLuint *dbname, GLuint *text
     glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT, *dbname);
 
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, *texture, 0);
-    
+
     // GLenum DrawBuffers[1] = {GL_DEPTH_ATTACHMENT};
     // glDrawBuffers(1, DrawBuffers);
 
-	//check the status of the frame buffer
-	if (glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT)
-	{
-		printf("Could not validate framebuffer");
-	}
+    // check the status of the frame buffer
+    if (glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT)
+    {
+        printf("Could not validate framebuffer");
+    }
 
-	printf("Generate texture %d and fbo %d.\n", *texture, *fboname);
+    printf("Generate texture %d and fbo %d.\n", *texture, *fboname);
 
-	glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
     glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, 0);
-	glBindTexture(GL_TEXTURE_2D, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-//initialization
+// initialization
 void SetupRC()
 {
     GLint i;
@@ -303,8 +314,8 @@ void SetupRC()
     GLint w, h, c;
     // Make sure required functionality is available!
     if (!GL_VERSION_2_0 && (!GL_ARB_fragment_shader ||
-        !GL_ARB_shader_objects ||
-        !GL_ARB_shading_language_100))
+                            !GL_ARB_shader_objects ||
+                            !GL_ARB_shading_language_100))
     {
         fprintf(stderr, "GLSL extensions not available!\n");
         return;
@@ -312,10 +323,10 @@ void SetupRC()
 
     // Make sure we have multitexture and cube maps!
     if (!GL_VERSION_1_3 && (!GL_ARB_multitexture ||
-        !GL_ARB_texture_cube_map))
+                            !GL_ARB_texture_cube_map))
     {
         fprintf(stderr, "Neither OpenGL 1.3 nor necessary"
-            " extensions are available!\n");
+                        " extensions are available!\n");
         return;
     }
 
@@ -337,38 +348,37 @@ void SetupRC()
     glEnable(GL_COLOR_MATERIAL);
     glEnable(GL_NORMALIZE);
 
-    GLbyte* tga;
+    GLbyte *tga;
     GLint width, height, component;
     GLenum format;
 
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
     glActiveTexture(GL_TEXTURE0);
-    //Load Image
+    // Load Image
     tga = gltLoadTGA("f22/f22.tga", &width, &height, &component, &format);
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, component, width, height, 0, format, GL_UNSIGNED_BYTE, (void*)tga);
+    glTexImage2D(GL_TEXTURE_2D, 0, component, width, height, 0, format, GL_UNSIGNED_BYTE, (void *)tga);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     free(tga);
 
-    
-    //Load map texture
+    // Load map texture
     glActiveTexture(GL_TEXTURE0);
     tga = gltLoadTGA("map/map.tga", &width, &height, &component, &format);
     glGenTextures(1, &map_texture);
     glBindTexture(GL_TEXTURE_2D, map_texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, component, width, height, 0, format, GL_UNSIGNED_BYTE, (void*)tga);
+    glTexImage2D(GL_TEXTURE_2D, 0, component, width, height, 0, format, GL_UNSIGNED_BYTE, (void *)tga);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     free(tga);
 
-	prepareFBO(GL_TEXTURE0, &fbo_shadow, &shadow_buffer, &shadow_texture, 2048, 2048, GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_FLOAT);
+    prepareFBO(GL_TEXTURE0, &fbo_shadow, &shadow_buffer, &shadow_texture, 2048, 2048, GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_FLOAT);
 
     glEnable(GL_TEXTURE_2D);
 }
@@ -411,7 +421,7 @@ void KeyPressFunc(unsigned char key, int x, int y)
     glutPostRedisplay();
 }
 
-void ReloadShaders(bool counting=false)
+void ReloadShaders(bool counting = false)
 {
     delete skyShader;
     delete lightingShader;
@@ -423,6 +433,9 @@ void ReloadShaders(bool counting=false)
     lightingShader = new Shader(2);
     lightingShader->addFromFile("shaders/vertex/lighting.vs", GL_VERTEX_SHADER);
     lightingShader->addFromFile("shaders/frag/lighting.fs", GL_FRAGMENT_SHADER);
+
+    texgen->reloadShaders();
+    texgen->generateTexture();
 }
 
 void SpecialKeys(int key, int x, int y)
@@ -449,6 +462,7 @@ void SpecialKeys(int key, int x, int y)
         break;
     case GLUT_KEY_F3:
         ReloadShaders();
+        
         break;
     case GLUT_KEY_F4:
         isShowingF22 = !isShowingF22;
@@ -483,16 +497,16 @@ void idle()
     m3dAddVectors3(sun, sun_target, sun);
     m3dScaleVector3(sun, 0.5);
     m3dNormalizeVector(sun);
-    
+
     glPushMatrix();
     if (running)
         for (int i = 0; i < 100; i++)
             f22->updatePhysic();
     glPopMatrix();
 
-    cameraPos[0] = cameraPos[0]*0.9 + targetCamPos[0]*0.1;
-    cameraPos[1] = cameraPos[1]*0.9 + targetCamPos[1]*0.1;
-    cameraPos[2] = cameraPos[2]*0.9 + targetCamPos[2]*0.1;
+    cameraPos[0] = cameraPos[0] * 0.9 + targetCamPos[0] * 0.1;
+    cameraPos[1] = cameraPos[1] * 0.9 + targetCamPos[1] * 0.1;
+    cameraPos[2] = cameraPos[2] * 0.9 + targetCamPos[2] * 0.1;
 
     sim_time += 0.001;
     usleep(10);
@@ -504,31 +518,31 @@ void mousePressed(int x_, int y_)
     float y = 2.0 * (float)y_ / windowHeight - 1.0;
 
     M3DVector3f p = {0.0};
-    p[0]=-(x-pmouse[0])*10.0;
-    p[1]=(y-pmouse[1])*10.0;
+    p[0] = -(x - pmouse[0]) * 10.0;
+    p[1] = (y - pmouse[1]) * 10.0;
 
     M3DVector3f d;
     m3dRotateVector(d, p, inverse_model_view_rot);
-    
+
     M3DVector3f plan_to_camera;
     m3dSubtractVectors3(plan_to_camera, targetCamPos, planePos);
-    float radius=m3dGetMagnitude(plan_to_camera);
+    float radius = m3dGetMagnitude(plan_to_camera);
 
     m3dAddVectors3(plan_to_camera, plan_to_camera, d);
     m3dNormalizeVector(plan_to_camera);
-    m3dScaleVector3(plan_to_camera,radius);
+    m3dScaleVector3(plan_to_camera, radius);
     m3dAddVectors3(targetCamPos, planePos, plan_to_camera);
 
-    pmouse[0]=x;
-    pmouse[1]=y;
+    pmouse[0] = x;
+    pmouse[1] = y;
 }
 
 void mouseHover(int x_, int y_)
 {
     float x = 2.0 * (float)x_ / windowWidth - 1.0;
     float y = 2.0 * (float)y_ / windowHeight - 1.0;
-    pmouse[0]=x;
-    pmouse[1]=y;
+    pmouse[0] = x;
+    pmouse[1] = y;
 
     // x = (abs(x) < 0.1) ? 0.0 : x;
     // y = (abs(y) < 0.1) ? 0.0 : y;
@@ -538,14 +552,14 @@ void mouseHover(int x_, int y_)
 
 void mouse(int button, int state, int x, int y)
 {
-    if (button == 4) 
-        cameraZoom = cameraZoom*0.9 + 0.3;
-    
-    else if (button == 3) 
-        cameraZoom = cameraZoom*0.9 + 0.05;
+    if (button == 4)
+        cameraZoom = cameraZoom * 0.9 + 0.3;
+
+    else if (button == 3)
+        cameraZoom = cameraZoom * 0.9 + 0.05;
 }
 
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
     m3dRotationMatrix33(sunRot, 0.015, 0.85, -2.0, 0.45);
     m3dRotationMatrix33(sunRotR, -0.015, 0.85, -2.0, 0.45);
@@ -577,9 +591,12 @@ int main(int argc, char* argv[])
     glutMouseFunc(mouse);
 
     f22 = new F22();
-    map = new ObjModel("map/map.obj",0.0, 0.0, 26000.0, 26000.0, 26000.0);
+    map = new ObjModel("map/map.obj", 0.0, 0.0, 26000.0, 26000.0, 26000.0);
     printf("init f22...\n");
     f22->updatePhysic();
+
+    texgen = new TextureGenerator(64, 64, 64, GL_R16F, GL_MIRRORED_REPEAT);
+    texgen->generateTexture();
 
     printf("setup...\n");
     SetupRC();

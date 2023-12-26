@@ -41,31 +41,31 @@ struct Norms
 	}
 };
 
+/*The struct storing a vertices, textcoords, and normals*/
 struct CVertex
 {
 	Vertex v;
 	Txcoord t;
 	Norms n;
 
-	bool operator==(CVertex& src)
-	{
-		return v == src.v && t == src.t && n == src.n;
-	}
+	inline bool operator==(CVertex& src)
+	{ return v == src.v && t == src.t && n == src.n; }
 };
 
+/*The struct storing the id of vertices, textcoords, and normals for a triagle*/
 struct Tfacet
 {
 	int v[3], t[3], n[3];
 
-	void minus()
-	{
-		for (int i = 0; i < 3; i++)
-		{
-			v[i]--;
-			t[i]--;
-			n[i]--;
-		}
+	inline void operator-=(int val)
+	{ 
+		for (int i = 0; i < 3; i++){
+			v[i]-=val;
+			t[i]-=val;
+			n[i]-=val;
+		} 
 	}
+	
 };
 
 class ObjModel

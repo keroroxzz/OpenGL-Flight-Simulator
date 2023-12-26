@@ -7,7 +7,17 @@
 
 using namespace std;
 
-ObjModel::ObjModel(const char* path, float ox, float oy, float scale_x, float scale_y, float scale_z) : offset_x(ox), offset_y(oy), list(0), pVerts(0)
+ObjModel::ObjModel(
+	const char* path, 
+	float ox, 
+	float oy, 
+	float scale_x, 
+	float scale_y, 
+	float scale_z): 
+	offset_x(ox), 
+	offset_y(oy), 
+	list(0), 
+	pVerts(0)
 {
 	LoadObj(path, scale_x, scale_y, scale_z);
 	InitVBO();
@@ -28,21 +38,21 @@ bool ObjModel::LoadObj(const char* pPathname, float scale_x, float scale_y, floa
 		if (!fin.good())
 			throw "Error loading file!";
 
-		const int strLen = 512;
-		char str[strLen];
+		const int bufferSize = 512;
+		char buffer[bufferSize];
 
-		fin.getline(str, strLen);
+		fin.getline(buffer, bufferSize);
 		if (!fin.good())
 			throw "Error loading file!";
 		
-		//read to the start of the first obj
-		while (!fin.eof())
-		{
-			fin.getline(str, strLen);
-			if (str[0] == 'o' && str[1] == ' ')
+		// Read to the start of the first obj
+		while (!fin.eof()){
+			fin.getline(buffer, bufferSize);
+			if (buffer[0] == 'o' && buffer[1] == ' ')
 				break;
 		}
 		
+		// Start reading the obj
 		std::vector<Vertex> vertices;
 		std::vector<Txcoord> txcoords;
 		std::vector<Norms> norms;
@@ -51,14 +61,14 @@ bool ObjModel::LoadObj(const char* pPathname, float scale_x, float scale_y, floa
 		cout << "Start loading "<< pPathname << endl;
 		while (!fin.eof())
 		{
-			fin.getline(str, strLen);
+			fin.getline(buffer, bufferSize);
 
 			if (fin.eof()) break;
 
-			if (strncmp(str, "v ", 2) == 0)
-			{
+			// add a vertex
+			if (strncmp(buffer, "v ", 2) == 0){
 				Vertex n_ver;
-				sscanf(str, "v %f %f %f", &n_ver.p[0], &n_ver.p[1], &n_ver.p[2]);
+				sscanf(buffer, "v %f %f %f", &n_ver.p[0], &n_ver.p[1], &n_ver.p[2]);
 
 				n_ver.p[0] *= scale_x;
 				n_ver.p[1] *= scale_y;
@@ -66,16 +76,16 @@ bool ObjModel::LoadObj(const char* pPathname, float scale_x, float scale_y, floa
 
 				vertices.push_back(n_ver);
 			}
-			else if (strncmp(str, "vt ", 3) == 0)
-			{
+			// add a texture coordinate
+			else if (strncmp(buffer, "vt ", 3) == 0){
 				Txcoord n_txc;
-				sscanf(str, "vt %f %f", &n_txc.p[0], &n_txc.p[1]);
+				sscanf(buffer, "vt %f %f", &n_txc.p[0], &n_txc.p[1]);
 				txcoords.push_back(n_txc);
 			}
-			else if (strncmp(str, "vn ", 3) == 0)
-			{
+			// add a normal
+			else if (strncmp(buffer, "vn ", 3) == 0){
 				Norms n_nor;
-				sscanf(str, "vn %f %f %f", &n_nor.n[0], &n_nor.n[1], &n_nor.n[2]);
+				sscanf(buffer, "vn %f %f %f", &n_nor.n[0], &n_nor.n[1], &n_nor.n[2]);
 
 				n_nor.n[0] *= scale_x;
 				n_nor.n[1] *= scale_y;
@@ -84,58 +94,58 @@ bool ObjModel::LoadObj(const char* pPathname, float scale_x, float scale_y, floa
 				n_nor.inverse();
 				norms.push_back(n_nor);
 			}
-			else if (strncmp(str, "f ", 2) == 0)
-			{
+			// add a face
+			// f v1/vt1/vn1 v2/vt2/vn2 v3/vt3/vn3
+			else if (strncmp(buffer, "f ", 2) == 0){
 				Tfacet face;
-				sscanf(str, "f %d/%d/%d %d/%d/%d %d/%d/%d", &face.v[0], &face.t[0], &face.n[0], &face.v[1], &face.t[1], &face.n[1], &face.v[2], &face.t[2], &face.n[2]);
-				face.minus();
+				sscanf(buffer, "f %d/%d/%d %d/%d/%d %d/%d/%d", 
+						&face.v[0], &face.t[0], &face.n[0], 
+						&face.v[1], &face.t[1], &face.n[1], 
+						&face.v[2], &face.t[2], &face.n[2]);
+				face-=1;
 				faces.push_back(face);
 			}
-			else if (str[0] == 'o' && str[1] == ' ')
+			else if (buffer[0] == 'o' && buffer[1] == ' ')
 				break;
 		}
 		fin.clear();
 		fin.close();
 		
-		cout << "Totally " << vertices.size() << " vertices, " << txcoords.size() << " txcoords, " << norms.size()<<" norms, " << faces.size() << " faces."<<endl;
+		cout << "Totally " << vertices.size() << " vertices, " 
+			<< txcoords.size() << " txcoords, " 
+			<< norms.size()<<" norms, " 
+			<< faces.size() << " faces."<<endl;
 
 		std::vector<CVertex> cvertices;
 		std::vector<int> indices;
 
-		for (int i = 0; i < faces.size(); i++)	//go through the faces
-		{
-			CVertex cvt[3];
-
-			for (int j = 0; j < 3; j++)	//three vertices per face
-			{
-
-				if (faces[i].v[j] >= vertices.size())
+		for (int i = 0; i < faces.size(); i++){	//go through the faces
+			for (int j = 0; j < 3; j++){	//three vertices per face
+				CVertex cvt;
+				if (faces[i].v[j] < vertices.size())
+					cvt.v = vertices[faces[i].v[j]];
+				else
 					cout << "face overflow : " << faces[i].v[j] << "  " << vertices.size() << endl;
-				else
-					cvt[j].v = vertices[faces[i].v[j]];
 
-				if (faces[i].t[j] >= txcoords.size())
+				if (faces[i].t[j] < txcoords.size())
+					cvt.t = txcoords[faces[i].t[j]];
+				else
 					cout << "txd overflow : " << faces[i].t[j] << "  " << txcoords.size() << endl;
-				else
-					cvt[j].t = txcoords[faces[i].t[j]];
 
-				if (faces[i].n[j] >= norms.size())
-					cout << "norms overflow : " << faces[i].n[j] << "  " << norms.size() << endl;
+				if (faces[i].n[j] < norms.size())
+					cvt.n = norms[faces[i].n[j]];
 				else
-					cvt[j].n = norms[faces[i].n[j]];
+					cout << "norms overflow : " << faces[i].n[j] << "  " << norms.size() << endl;
 				
-				bool repeated = false;
-				
-				for (int k = 0; k < cvertices.size() && !repeated; k++)
-					if (cvt[j] == cvertices[k])
-					{
-						indices.push_back(k);
-						repeated = true;
-					}
-				if (repeated) continue;
-				
-				cvertices.push_back(cvt[j]);
-				indices.push_back(cvertices.size()-1);
+				// use the same vertex if it is already in the list
+				int repeatId = 0;
+				for (; repeatId < cvertices.size() && !(cvt == cvertices[repeatId]); repeatId++);
+				if(repeatId < cvertices.size()){
+					indices.push_back(repeatId);
+				}else{
+					cvertices.push_back(cvt);
+					indices.push_back(cvertices.size()-1);
+				}
 			}
 		}
 
@@ -147,15 +157,12 @@ bool ObjModel::LoadObj(const char* pPathname, float scale_x, float scale_y, floa
 		pNorm = new GLfloat[cvertices.size() * 3];
 		pInd = new GLushort[indices.size()];
 
-		for (int i = 0; i < indices.size(); i++)
-		{
+		for (int i = 0; i < indices.size(); i++){
 			pInd[i] = indices[i];
 		}
 
-		for (int i = 0; i < cvertices.size(); i++)
-		{
-			for (int j = 0; j < 3; j++)
-			{
+		for (int i = 0; i < cvertices.size(); i++){
+			for (int j = 0; j < 3; j++){
 				pVerts[i * 3 + j] = cvertices[i].v.p[j];
 				pNorm[i * 3 + j] = cvertices[i].n.n[j];
 			}
@@ -170,13 +177,8 @@ bool ObjModel::LoadObj(const char* pPathname, float scale_x, float scale_y, floa
 		vector<CVertex>().swap(cvertices);
 		vector<int>().swap(indices);
 	}
-	catch (exception *e)
-	{
+	catch (exception *e){
 		cout << e->what();
-	}
-	catch (char* str)
-	{
-		cout << str;
 	}
 	return 0;
 }

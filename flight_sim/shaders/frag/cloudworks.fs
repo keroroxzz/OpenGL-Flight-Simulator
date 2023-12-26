@@ -23,6 +23,7 @@ uniform mat4 InvVP;
 uniform vec4 camera;
 uniform vec3 SunDirection;
 uniform sampler2D sampler0;
+uniform sampler3D test;
 
 uniform mat4 ModelViewProjectionMatrix;
 uniform mat4 ProjectionMatrix;
@@ -68,39 +69,12 @@ float hash(float n) {
 
 float noise_p(vec3 p) {
 
-    vec3 fr = floor(p),
-    ft = fract(p);
+    vec3 text3d = texture(
+        test, p).xyz;
 
-    float n = 1153.0 * fr.x + 2381.0 * fr.y + fr.z,
-    nr = n + 1153.0,
-    nd = n + 2381.0,
-    no = nr + 2381.0,
-
-    v = l(hash(n), hash(n + 1.0), ft.z),
-    vr = l(hash(nr), hash(nr + 1.0), ft.z),
-    vd = l(hash(nd), hash(nd + 1.0), ft.z),
-    vo = l(hash(no), hash(no + 1.0), ft.z);
-
-    return ((v * (1.0 - ft.x) + vr * (ft.x)) * (1.0 - ft.y) + (vd * (1.0 - ft.x) + vo * ft.x) * ft.y);
+    return text3d.x;
 }
 //=========================================
-float noise2d(float3 p) {
-
-    float3 fr = floor(p),
-    ft = frac(p);
-
-    float n = 1153.0 * fr.x + 2381.0 * fr.y + p.z,
-    nr = n + 1153.0,
-    nd = n + 2381.0,
-    no = nr + 2381.0,
-
-    v = hash(n),
-    vr = hash(nr),
-    vd = hash(nd),
-    vo = hash(no);
-
-    return ((v * (1.0 - ft.x) + vr * (ft.x)) * (1.0 - ft.y) + (vd * (1.0 - ft.x) + vo * ft.x) * ft.y);
-}
 
 float noise3d(float3 p) {
 
@@ -108,24 +82,6 @@ float noise3d(float3 p) {
     ft = frac(p);
 
     float n = 1153.0 * fr.x + 2381.0 * fr.y + fr.z,
-    nr = n + 1153.0,
-    nd = n + 2381.0,
-    no = nr + 2381.0,
-
-    v = l(hash(n), hash(n + 1.0), ft.z),
-    vr = l(hash(nr), hash(nr + 1.0), ft.z),
-    vd = l(hash(nd), hash(nd + 1.0), ft.z),
-    vo = l(hash(no), hash(no + 1.0), ft.z);
-
-    return l(l(v,vr,ft.x), l(vd,vo,ft.x),ft.y);
-}
-
-float noise3d_timedep(float3 p, float time) {
-
-    float3 fr = floor(p),
-    ft = frac(p);
-
-    float n = 1153.0 * fr.x + 2381.0 * fr.y + fr.z + time,
     nr = n + 1153.0,
     nd = n + 2381.0,
     no = nr + 2381.0,
@@ -294,43 +250,43 @@ float min_sl  = 5.0;
 float max_sl  = 75.0;
 float step_mul  = 2.0;
 float maxStep  = 150.0;
-float dCut  = 0.1;
-float tCut  = 0.05;
+float dCut  = 0.0;
+float tCut  = 0.0;
 
-float body_top  = 750.0;
+float body_top  = 1000.0;
 float body_mid  = 150.0;
 float body_bot  = 0.0;
 float body_thickness  = 0.0;
 
-float grow  = 0.85;
+float grow  = 1.0;
 float grow_c  = 0.55;
 float soft_top  = 0.6;
 float soft_bot  = 0.85;
 float soft_bot_c  = 1.5;
 
-float noise_densA  = 0.35;
-float noise_densB  = 0.25;
+float noise_densA  = 0.15;
+float noise_densB  = 0.30;
 float noise_densC  = 0.25;
-float noise_densD  = 0.3;
-float noise_densE  = 0.4;
-float noiseSizeA  = 50.0;
-float noiseSizeB  = 7.0;
+float noise_densD  = 0.20;
+float noise_densE  = 0.60;
+float noiseSizeA  = 60.0;
+float noiseSizeB  = 30.0;
 float noiseSizeC  = 10.0;
-float noiseSizeD  = 3.0;
-float noiseSizeE  = 1.0;
+float noiseSizeD  = 6.0;
+float noiseSizeE  = 3.0;
 
 vec3 cloud_shift  = vec3(-1.0, 0, 0);
-float curvy_ang  = 2.0;
-float curvy_strength  = 70.0;
+float curvy_ang  = 8.0;
+float curvy_strength  = 50.0;
 
-float BeerFactor  = 0.8;
+float BeerFactor  = 1.0;
 float EffectFactor  = 1.0;
 float solidness_top = 2.0;
-float solidness_bot = 0.1;
+float solidness_bot = 1.0;
 float scattering  = 0.0;
 float cloudBrightnessMultiply  = 0.5;
 
-float shadowStep = 10.0;
+float shadowStep = 5.0;
 float ShadowStepLength  = 75.0;
 float DetailShadowStepLength  = 15.0;
 float ShadowDetail  = 0.2;
@@ -341,7 +297,7 @@ float shadowSoftness  = 0.0;
 
 float alpha_curve  = 1.0;
 float fade_s  = 0.0;
-float fade_e  = 15000.0;
+float fade_e  = 10000.0;
 
 float speed  = 100.0;
 vec3 nA_move  = vec3(-1, 2, 0.29);
@@ -828,4 +784,17 @@ void main(void) {
     c = c*midCloud.w + midCloud.xyz;
     
     FragColor = vec4(c, 1.0);
+
+    // vec3 text3d = texture(
+    //     test, 
+    //     vec3(gl_FragCoord.x / windowWidth, 
+    //     gl_FragCoord.y / windowHeight,
+    //     SunDirection.z)).xyz;
+
+    // vec3 text2d = texture(
+    //     sampler0, 
+    //     vec2(gl_FragCoord.x / windowWidth, 
+    //     gl_FragCoord.y / windowHeight)).xyz;
+        
+    // FragColor = vec4(text3d, 1.0);
 }
