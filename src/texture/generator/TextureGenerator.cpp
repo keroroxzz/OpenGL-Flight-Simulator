@@ -1,11 +1,17 @@
 #include "TextureGenerator.h"
 
-TextureGenerator::TextureGenerator(int width, int height, int depth, GLenum internalformat, GLint warpType):
- width(width), height(height), depth(depth), internalformat(internalformat), warpType(warpType){
+TextureGenerator::TextureGenerator(
+    char shader_path[],
+    int width, 
+    int height, 
+    int depth, 
+    GLenum internalformat, 
+    GLint warpType):
+ shader_path(shader_path), width(width), height(height), depth(depth), internalformat(internalformat), warpType(warpType){
 
     // initialize computation shader
     shader = new Shader(1);
-    shader->addFromFile("shaders/compute/textgen.glsl", GL_COMPUTE_SHADER);
+    shader->addFromFile(shader_path, GL_COMPUTE_SHADER);
 
     // initailize texture type and level
     if (depth > 1)
@@ -40,7 +46,7 @@ TextureGenerator::TextureGenerator(int width, int height, int depth, GLenum inte
 void TextureGenerator::reloadShaders(){
     delete shader;
     shader = new Shader(1);
-    shader->addFromFile("shaders/compute/textgen.glsl", GL_COMPUTE_SHADER);
+    shader->addFromFile(shader_path, GL_COMPUTE_SHADER);
 }
 
 void TextureGenerator::generateTexture(){

@@ -21,12 +21,19 @@ class TextureGenerator{
     Shader *shader;
 
     unsigned int VBO[2];
+    char *shader_path;
     
     // unsigned int texname;
     int width, height, depth;
     
 public:
-    TextureGenerator(int width, int height, int depth, GLenum internalformat, GLint warpType);
+    TextureGenerator(
+        char shader_path[],
+        int width, 
+        int height,
+        int depth, 
+        GLenum internalformat, 
+        GLint warpType);
 
     void initFramebuffer();
     void generateTexture();

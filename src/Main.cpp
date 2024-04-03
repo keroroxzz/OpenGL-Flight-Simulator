@@ -51,7 +51,8 @@ ObjModel *map;
 F22 *f22;
 float throttleFactor = 0.0;
 
-TextureGenerator *texgen;
+TextureGenerator *cloudNoise;
+TextureGenerator *atmTexture;
 
 chrono::high_resolution_clock::time_point pclock = chrono::high_resolution_clock::now();
 
@@ -138,10 +139,10 @@ void RenderShadowDepth(M3DMatrix44f mvp, M3DMatrix44f mv)
 // Called to draw scene
 void RenderScene(void)
 {
-    // delete texgen;
-    // texgen = new TextureGenerator(256, 256, 256);
-    // texgen->reloadShaders();
-    texgen->generateTexture();
+    // delete cloudNoise;
+    // cloudNoise = new TextureGenerator(256, 256, 256);
+    // cloudNoise->reloadShaders();
+    // cloudNoise->generateTexture();
 
     UpdateCameraPose();
     M3DMatrix44f model_view_proj_shadow, model_view_shadow;
@@ -237,8 +238,11 @@ void RenderScene(void)
     glBindTexture(GL_TEXTURE_2D, texture);
     skyShader->setUniform("sampler0", UNI_TEXTURE, 0);
 
-    texgen->bindTexture(GL_TEXTURE0+1);
+    cloudNoise->bindTexture(GL_TEXTURE0+1);
     skyShader->setUniform("test", UNI_TEXTURE, 0, 1, 0U, 1);
+
+    atmTexture->bindTexture(GL_TEXTURE0+2);
+    skyShader->setUniform("atmText", UNI_TEXTURE, 0, 1, 0U, 2);
 
     glColor3f(1.0f, 1.0f, 1.0f);
 
@@ -354,9 +358,10 @@ void SetupRC()
 
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
+
     glActiveTexture(GL_TEXTURE0);
     // Load Image
-    tga = gltLoadTGA("f22/f22.tga", &width, &height, &component, &format);
+    tga = gltLoadTGA("./f22/f22.tga", &width, &height, &component, &format);
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexImage2D(GL_TEXTURE_2D, 0, component, width, height, 0, format, GL_UNSIGNED_BYTE, (void *)tga);
@@ -368,7 +373,7 @@ void SetupRC()
 
     // Load map texture
     glActiveTexture(GL_TEXTURE0);
-    tga = gltLoadTGA("map/map.tga", &width, &height, &component, &format);
+    tga = gltLoadTGA("./map/map.tga", &width, &height, &component, &format);
     glGenTextures(1, &map_texture);
     glBindTexture(GL_TEXTURE_2D, map_texture);
     glTexImage2D(GL_TEXTURE_2D, 0, component, width, height, 0, format, GL_UNSIGNED_BYTE, (void *)tga);
@@ -427,15 +432,17 @@ void ReloadShaders(bool counting = false)
     delete lightingShader;
 
     skyShader = new Shader(2);
-    skyShader->addFromFile("shaders/vertex/cloudworks.vs", GL_VERTEX_SHADER);
-    skyShader->addFromFile("shaders/frag/cloudworks.fs", GL_FRAGMENT_SHADER);
+    skyShader->addFromFile("./shaders/vertex/cloudworks.vs", GL_VERTEX_SHADER);
+    skyShader->addFromFile("./shaders/frag/cloudworks.fs", GL_FRAGMENT_SHADER);
 
     lightingShader = new Shader(2);
-    lightingShader->addFromFile("shaders/vertex/lighting.vs", GL_VERTEX_SHADER);
-    lightingShader->addFromFile("shaders/frag/lighting.fs", GL_FRAGMENT_SHADER);
+    lightingShader->addFromFile("./shaders/vertex/lighting.vs", GL_VERTEX_SHADER);
+    lightingShader->addFromFile("./shaders/frag/lighting.fs", GL_FRAGMENT_SHADER);
 
-    texgen->reloadShaders();
-    texgen->generateTexture();
+    // cloudNoise->reloadShaders();
+    // cloudNoise->generateTexture();
+    atmTexture->reloadShaders();
+    atmTexture->generateTexture();
 }
 
 void SpecialKeys(int key, int x, int y)
@@ -558,9 +565,22 @@ void mouse(int button, int state, int x, int y)
     else if (button == 3)
         cameraZoom = cameraZoom * 0.9 + 0.05;
 }
-
+#include <libgen.h>         // dirname
+#include <unistd.h>         // readlink
+#include <linux/limits.h>   // PATH_MAX
 int main(int argc, char *argv[])
 {
+
+    char result[PATH_MAX];
+    ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
+    const char *path;
+    if (count != -1) {
+        path = dirname(result);
+        printf("path: %s\n", path);
+    } else {
+        printf("readlink failed\n");
+    }
+
     m3dRotationMatrix33(sunRot, 0.015, 0.85, -2.0, 0.45);
     m3dRotationMatrix33(sunRotR, -0.015, 0.85, -2.0, 0.45);
 
@@ -574,12 +594,12 @@ int main(int argc, char *argv[])
     glutCreateWindow("Fight Simulator - alpha");
 
     skyShader = new Shader(2);
-    skyShader->addFromFile("shaders/vertex/cloudworks.vs", GL_VERTEX_SHADER);
-    skyShader->addFromFile("shaders/frag/cloudworks.fs", GL_FRAGMENT_SHADER);
+    skyShader->addFromFile("./shaders/vertex/cloudworks.vs", GL_VERTEX_SHADER);
+    skyShader->addFromFile("./shaders/frag/cloudworks.fs", GL_FRAGMENT_SHADER);
 
     lightingShader = new Shader(2);
-    lightingShader->addFromFile("shaders/vertex/lighting.vs", GL_VERTEX_SHADER);
-    lightingShader->addFromFile("shaders/frag/lighting.fs", GL_FRAGMENT_SHADER);
+    lightingShader->addFromFile("./shaders/vertex/lighting.vs", GL_VERTEX_SHADER);
+    lightingShader->addFromFile("./shaders/frag/lighting.fs", GL_FRAGMENT_SHADER);
 
     glutReshapeFunc(ChangeSize);
     glutKeyboardFunc(KeyPressFunc);
@@ -591,12 +611,29 @@ int main(int argc, char *argv[])
     glutMouseFunc(mouse);
 
     f22 = new F22();
-    map = new ObjModel("map/map.obj", 0.0, 0.0, 26000.0, 26000.0, 26000.0);
+    map = new ObjModel("./map/map.obj", 0.0, 0.0, 26000.0, 26000.0, 26000.0);
     printf("init f22...\n");
     f22->updatePhysic();
 
-    texgen = new TextureGenerator(64, 64, 64, GL_R16F, GL_MIRRORED_REPEAT);
-    texgen->generateTexture();
+    cloudNoise = new TextureGenerator(
+        "./shaders/compute/cloudNoise.comp",
+        64, 
+        64, 
+        64, 
+        GL_R16F, 
+        GL_MIRRORED_REPEAT);
+
+    cloudNoise->generateTexture();
+
+    atmTexture = new TextureGenerator(
+        "./shaders/compute/atomosphere.comp",
+        256, 
+        256, 
+        128, 
+        GL_RG16F, 
+        GL_CLAMP_TO_EDGE);
+
+    atmTexture->generateTexture();
 
     printf("setup...\n");
     SetupRC();
