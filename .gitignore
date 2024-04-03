@@ -1,6 +1,8 @@
 cmake_install.cmake
 CMakeCache.txt
 Makefile
+build/*
 CMakeFiles/*
+flight_sim/lib/*
 flight_sim/flight_sim
 .vscode/*

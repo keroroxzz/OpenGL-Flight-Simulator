@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(flight_sim)
 
-add_compile_options(-std=c++11)
+add_compile_options(-std=c++2a)
 
 set(CMAKE_BINARY_DIR "${CMAKE_SOURCE_DIR}/build")
+set(OUTPUT_FOLDER ${PROJECT_NAME})
 
-# OpenGL
+# ======== OpenGL libraries ========
 find_package(OpenGL REQUIRED)
 find_package(GLUT REQUIRED)
 
@@ -17,28 +18,33 @@ set(GLEW_LIBRARY "" CACHE FILEPATH "libglew.a or glew.lib" )
 
 set(GLM_INCLUDE_PATH "" CACHE PATH "The directory that contains glm/glm.hpp" )
 
-# Add source files
-file(GLOB_RECURSE SOURCE_FILES 
-	${CMAKE_SOURCE_DIR}/src/*.cpp)
-	
-# Add header files
-file(GLOB_RECURSE HEADER_FILES 
-	${CMAKE_SOURCE_DIR}/includes/*.h)
-
 include_directories(
 	${GLFW_INCLUDE_PATH}
 	${GLEW_INCLUDE_PATH}
 	${GLM_INCLUDE_PATH}
 )
 
+# ======== build libraries ========
+set(LIB_NAME "physics_engine")
+add_subdirectory(${LIB_NAME})
+link_libraries(${LIB_NAME})
+
+# ======== build main executable ========
+
+# add header files
 include_directories(
-	"${CMAKE_SOURCE_DIR}/src"
 	"${CMAKE_SOURCE_DIR}/includes"
+	"${CMAKE_SOURCE_DIR}"
 )
 
+# add source files
+file(GLOB_RECURSE SOURCE_FILES 
+	${CMAKE_SOURCE_DIR}/src/*.cpp)
+
 add_executable(${PROJECT_NAME} ${HEADER_FILES} ${SOURCE_FILES})
-target_link_libraries(${PROJECT_NAME} ${OPENGL_LIBRARIES} ${GLUT_LIBRARY} )
+target_link_libraries(${PROJECT_NAME} ${OPENGL_LIBRARIES} ${GLUT_LIBRARY})
 set_target_properties(${PROJECT_NAME} PROPERTIES 
-	ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/flight_sim/lib"
-	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/flight_sim/lib"
-	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/flight_sim/")
+	ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/${OUTPUT_FOLDER}/lib"
+	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/${OUTPUT_FOLDER}/lib"
+	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/${OUTPUT_FOLDER}/")
+

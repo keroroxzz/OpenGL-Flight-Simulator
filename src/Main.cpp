@@ -14,6 +14,7 @@
 #include "Plane.h"
 #include "TextureGenerator.h"
 #include <chrono>
+#include "physics_engine/includes/interfaces/SimpleEngine_Interface.h"
 
 bool showForce = true;
 bool isShowingForce = false;
@@ -580,6 +581,9 @@ int main(int argc, char *argv[])
     } else {
         printf("readlink failed\n");
     }
+
+    iSimpleEngine* engine = create();
+    engine->test();
 
     m3dRotationMatrix33(sunRot, 0.015, 0.85, -2.0, 0.45);
     m3dRotationMatrix33(sunRotR, -0.015, 0.85, -2.0, 0.45);

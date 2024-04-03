@@ -12,7 +12,8 @@ Install OpenGL dependencies
 
 Compile the project
 
-    cmake . && make
+    cd {root of the project}
+    ./build.sh
 
 Excute
 
