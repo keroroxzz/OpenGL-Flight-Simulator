@@ -3,11 +3,10 @@
 
 using namespace std;
 
-
 iSimpleEngine* create() {
-    return static_cast<iSimpleEngine*>(new SimpleEngine());
+  return static_cast<iSimpleEngine*>(new SimpleEngine());
 }
 
 void SimpleEngine::test() {
-    printf("test interface...\n");
+  printf("test interface...\n");
 }

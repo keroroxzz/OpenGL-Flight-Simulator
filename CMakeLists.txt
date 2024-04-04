@@ -25,9 +25,11 @@ include_directories(
 )
 
 # ======== build libraries ========
-set(LIB_NAME "physics_engine")
-add_subdirectory(${LIB_NAME})
-link_libraries(${LIB_NAME})
+
+set(SHARED_LIBS "")
+add_subdirectory(physics_engine)
+add_subdirectory(render_engine)
+link_libraries(${SHARED_LIBS})
 
 # ======== build main executable ========
 

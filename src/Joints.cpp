@@ -1,127 +1,131 @@
 #include "Joints.h"
 
-void Joint::update()
-{
-    child->updateDynamic();
-    child->updateChildrenDynamic();
+void Joint::update() {
+  child->updateDynamic();
+  child->updateChildrenDynamic();
 }
 
-void Joint::updateEffect(DynamicModel* base)
-{
-    child->updateEffect(base);
+void Joint::updateEffect(DynamicModel* base) {
+  child->updateEffect(base);
 }
 
-FixedJoint::FixedJoint(DynamicModel* parent, DynamicModel* child, M3DVector3f pos, float r, float p, float y) :Joint(parent, child)
-{
-    glPushMatrix();
+FixedJoint::FixedJoint(DynamicModel* parent,
+                       DynamicModel* child,
+                       M3DVector3f pos,
+                       float r,
+                       float p,
+                       float y)
+    : Joint(parent, child) {
+  glPushMatrix();
 
-    //calculate the matrix
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    glTranslated(pos[0], pos[1], pos[2]);
-    glRotated(r, 1.0, 0.0, 0.0);
-    glRotated(p, 0.0, 1.0, 0.0);
-    glRotated(y, 0.0, 0.0, 1.0);
+  // calculate the matrix
+  glMatrixMode(GL_MODELVIEW);
+  glLoadIdentity();
+  glTranslated(pos[0], pos[1], pos[2]);
+  glRotated(r, 1.0, 0.0, 0.0);
+  glRotated(p, 0.0, 1.0, 0.0);
+  glRotated(y, 0.0, 0.0, 1.0);
 
-    glGetFloatv(GL_MODELVIEW_MATRIX, T);
-    m3dInvertMatrix44(IT, T);
+  glGetFloatv(GL_MODELVIEW_MATRIX, T);
+  m3dInvertMatrix44(IT, T);
 
-    glPopMatrix();
+  glPopMatrix();
 
-    //attact joint
-    parent->attach(this);
-    child->parent_joint = this;
+  // attact joint
+  parent->attach(this);
+  child->parent_joint = this;
 }
 
-void FixedJoint::display(M3DMatrix44f cvmatrix, GLint model_view_loc)
-{
-    glPushMatrix();
+void FixedJoint::display(M3DMatrix44f cvmatrix, GLint model_view_loc) {
+  glPushMatrix();
 
-    //apply joint transformation
-    glMultMatrixf(T);
+  // apply joint transformation
+  glMultMatrixf(T);
 
-    child->display(cvmatrix, model_view_loc);
+  child->display(cvmatrix, model_view_loc);
 
-    glPopMatrix();
+  glPopMatrix();
 }
 
-void FixedJoint::visualize(M3DMatrix44f cvmatrix)
-{
-    glPushMatrix();
+void FixedJoint::visualize(M3DMatrix44f cvmatrix) {
+  glPushMatrix();
 
-    //apply joint transformation
-    glMultMatrixf(T);
+  // apply joint transformation
+  glMultMatrixf(T);
 
-    child->visualize(cvmatrix);
+  child->visualize(cvmatrix);
 
-    glPopMatrix();
+  glPopMatrix();
 }
 
-void FixedJoint::updatePositionVelocity(DynamicModel* base)
-{
-    glPushMatrix();
+void FixedJoint::updatePositionVelocity(DynamicModel* base) {
+  glPushMatrix();
 
-    //apply joint transformation
-    glMultMatrixf(T);
+  // apply joint transformation
+  glMultMatrixf(T);
 
-    child->updatePositionVelocity(base);
+  child->updatePositionVelocity(base);
 
-    glPopMatrix();
+  glPopMatrix();
 }
 
-RevoluteJoint::RevoluteJoint(DynamicModel* parent, DynamicModel* child, M3DVector3f pos, float r, float p, float y, float ax, float ay, float az) :FixedJoint(parent, child, pos, r, p, y)
-{
-    angle = 0.0;
+RevoluteJoint::RevoluteJoint(DynamicModel* parent,
+                             DynamicModel* child,
+                             M3DVector3f pos,
+                             float r,
+                             float p,
+                             float y,
+                             float ax,
+                             float ay,
+                             float az)
+    : FixedJoint(parent, child, pos, r, p, y) {
+  angle = 0.0;
 
-    //init axis value
-    raxis[0] = ax;
-    raxis[1] = ay;
-    raxis[2] = az;
+  // init axis value
+  raxis[0] = ax;
+  raxis[1] = ay;
+  raxis[2] = az;
 
-    //normalize it
-    m3dNormalizeVector(raxis);
+  // normalize it
+  m3dNormalizeVector(raxis);
 }
 
-void RevoluteJoint::display(M3DMatrix44f cvmatrix, GLint model_view_loc)
-{
-    glPushMatrix();
+void RevoluteJoint::display(M3DMatrix44f cvmatrix, GLint model_view_loc) {
+  glPushMatrix();
 
-    //apply joint transformation
-    glMultMatrixf(T);
-    glRotatef(angle, raxis[0], raxis[1], raxis[2]);
+  // apply joint transformation
+  glMultMatrixf(T);
+  glRotatef(angle, raxis[0], raxis[1], raxis[2]);
 
-    child->display(cvmatrix, model_view_loc);
+  child->display(cvmatrix, model_view_loc);
 
-    glPopMatrix();
+  glPopMatrix();
 }
 
-void RevoluteJoint::visualize(M3DMatrix44f cvmatrix)
-{
-    glPushMatrix();
+void RevoluteJoint::visualize(M3DMatrix44f cvmatrix) {
+  glPushMatrix();
 
-    //apply joint transformation
-    glMultMatrixf(T);
-    glRotatef(angle, raxis[0], raxis[1], raxis[2]);
+  // apply joint transformation
+  glMultMatrixf(T);
+  glRotatef(angle, raxis[0], raxis[1], raxis[2]);
 
-    child->visualize(cvmatrix);
+  child->visualize(cvmatrix);
 
-    glPopMatrix();
+  glPopMatrix();
 }
 
-void RevoluteJoint::updatePositionVelocity(DynamicModel* base)
-{
-    glPushMatrix();
+void RevoluteJoint::updatePositionVelocity(DynamicModel* base) {
+  glPushMatrix();
 
-    //apply joint transformation
-    glMultMatrixf(T);
-    glRotatef(angle, raxis[0], raxis[1], raxis[2]);
+  // apply joint transformation
+  glMultMatrixf(T);
+  glRotatef(angle, raxis[0], raxis[1], raxis[2]);
 
-    child->updatePositionVelocity(base);
+  child->updatePositionVelocity(base);
 
-    glPopMatrix();
+  glPopMatrix();
 }
 
-void RevoluteJoint::moveAngle(float target, float ratio)
-{
-    angle = ratio * target + (1.0 - ratio) * angle;
+void RevoluteJoint::moveAngle(float target, float ratio) {
+  angle = ratio * target + (1.0 - ratio) * angle;
 }

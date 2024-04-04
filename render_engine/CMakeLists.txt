@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(physics_engine)
+project(render_engine)
 
 # add source files
 file(GLOB_RECURSE LIB_SOURCE_FILES ${CMAKE_SOURCE_DIR}/${PROJECT_NAME}/src/*.cpp)
