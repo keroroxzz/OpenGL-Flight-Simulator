@@ -1,6 +1,7 @@
 #pragma once
 
 #include "baseHeader.h"
+#include "utils/logger/includes/logger.h"
 
 #define UNI_INT_1 -1
 #define UNI_FLOAT_1 0
@@ -16,6 +17,8 @@
 
 class Shader
 {
+	USE_LOGS();
+
 private:
 	const int maxShaders;
 
@@ -35,6 +38,7 @@ public:
 
 	GLint getProgram();
 
+	
 private:
 	GLchar* loadShaderText(const char* fileName);
 	void compileShader(const char* shadername, int index, int shader_type);

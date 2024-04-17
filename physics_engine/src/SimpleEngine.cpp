@@ -3,7 +3,7 @@
 
 using namespace std;
 
-iSimpleEngine* create() {
+iSimpleEngine* iSimpleEngine::create() {
   return static_cast<iSimpleEngine*>(new SimpleEngine());
 }
 

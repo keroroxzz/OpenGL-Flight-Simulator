@@ -14,8 +14,11 @@
 #include "Shader.h"
 #include "TextureGenerator.h"
 #include "baseHeader.h"
+#include "utils/logger/includes/logger.h"
 #include "physics_engine/includes/interfaces/SimpleEngine_Interface.h"
 #include "render_engine/includes/interfaces/RenderEngine_Interface.h"
+
+USE_LOGS();
 
 bool showForce = true;
 bool isShowingForce = false;
@@ -330,12 +333,12 @@ void prepareFBO(GLenum textureNum,
 void SetupRC() {
   GLint i;
 
-  fprintf(stdout, "Simple Flight Simulator by Brian");
+  LOGD("Simple Flight Simulator by Brian");
   GLint w, h, c;
   // Make sure required functionality is available!
   if (!GL_VERSION_2_0 && (!GL_ARB_fragment_shader || !GL_ARB_shader_objects ||
                           !GL_ARB_shading_language_100)) {
-    fprintf(stderr, "GLSL extensions not available!\n");
+    LOGE("GLSL extensions not available!");
     return;
   }
 
@@ -347,13 +350,13 @@ void SetupRC() {
     return;
   }
 
-  fprintf(stdout, "Controls:\n");
-  fprintf(stdout, "\tRight-click for menu\n\n");
-  fprintf(stdout, "\tR/L arrows\t+/- rotate lights for others shaders\n\n");
-  fprintf(stdout, "\tx/X\t\tMove +/- in x direction\n");
-  fprintf(stdout, "\ty/Y\t\tMove +/- in y direction\n");
-  fprintf(stdout, "\tz/Z\t\tMove +/- in z direction\n\n");
-  fprintf(stdout, "\tq\t\tExit demo\n\n");
+  LOGD("Controls:");
+  LOGD("\tRight-click for menu");
+  LOGD("\tR/L arrows\t+/- rotate lights for others shaders");
+  LOGD("\tx/X\t\tMove +/- in x direction");
+  LOGD("\ty/Y\t\tMove +/- in y direction");
+  LOGD("\tz/Z\t\tMove +/- in z direction");
+  LOGD("\tq\t\tExit demo");
 
   // Black background
   glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -584,10 +587,10 @@ int main(int argc, char* argv[]) {
     printf("readlink failed\n");
   }
 
-  iSimpleEngine* engine = create();
+  iSimpleEngine* engine = iSimpleEngine::create();
   engine->test();
 
-  RenderEngine_Interface* renderEng = RenderEngine_Interface::create();
+  iRenderEngine* renderEng = iRenderEngine::create();
   renderEng->render();
 
   m3dRotationMatrix33(sunRot, 0.015, 0.85, -2.0, 0.45);

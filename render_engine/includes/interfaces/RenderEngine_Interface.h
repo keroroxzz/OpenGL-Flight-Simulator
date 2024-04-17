@@ -1,6 +1,6 @@
 
-class RenderEngine_Interface {
+class iRenderEngine {
  public:
   virtual void render() = 0;
-  static RenderEngine_Interface* create();
+  static iRenderEngine* create();
 };

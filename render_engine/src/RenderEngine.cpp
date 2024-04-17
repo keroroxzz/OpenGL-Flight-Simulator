@@ -4,8 +4,8 @@
 
 using namespace std;
 
-RenderEngine_Interface* RenderEngine::create() {
-  return static_cast<RenderEngine_Interface*>(new RenderEngine());
+iRenderEngine* iRenderEngine::create() {
+  return static_cast<iRenderEngine*>(new RenderEngine());
 }
 
 void RenderEngine::render() {

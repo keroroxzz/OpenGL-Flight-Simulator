@@ -12,6 +12,8 @@ Shader::Shader(int max_num)
 
   // init shader program
   program = glCreateProgram();
+
+  LOGI("Shader Manager created!");
 }
 
 Shader::~Shader() {
@@ -19,6 +21,7 @@ Shader::~Shader() {
   for (int i = 0; i < currentIndex; i++)
     glDeleteShader(shaders[i]);
 
+  LOGD("Shader Manager destroyed!");
   delete[] shaders;
 }
 
@@ -32,11 +35,13 @@ bool Shader::addFromFile(const char* filename, int type) {
 
   currentIndex++;
 
+  LOGI("Add shader: %s", filename);
   return 1;
 }
 
 void Shader::use() {
   glUseProgram(program);
+  LOGD("Use shader: %d", program);
 }
 
 GLchar* Shader::loadShaderText(const char* fileName) {
@@ -57,7 +62,7 @@ GLchar* Shader::loadShaderText(const char* fileName) {
 
     fclose(fp);
   } else {
-    fprintf(stderr, "Unable to load \"%s\"\n", fileName);
+    LOGE("Unable to load \"%s\"", fileName);
     return NULL;
   }
 
@@ -69,7 +74,7 @@ void Shader::compileShader(const char* shadername, int index, int shader_type) {
   const GLchar* fsStringPtr[1];
   GLint success;
 
-  printf("Compile Shader: %s\n", shadername);
+  LOGD("Compile Shader: %s", shadername);
   fsString = loadShaderText(shadername);
 
   if (fsString == NULL)
@@ -87,8 +92,8 @@ void Shader::compileShader(const char* shadername, int index, int shader_type) {
   if (!success) {
     GLchar infoLog[MAX_INFO_LOG_SIZE];
     glGetShaderInfoLog(shaders[index], MAX_INFO_LOG_SIZE, NULL, infoLog);
-    fprintf(stderr, "Error in fragment shader #%d compilation!\n", index);
-    fprintf(stderr, "Info log: %s\n", infoLog);
+    LOGE("Error in fragment shader #%d compilation!", index);
+    LOGE("Info log: %s", infoLog);
     std::cout << infoLog << std::endl;
     return;
   }
@@ -97,7 +102,7 @@ void Shader::compileShader(const char* shadername, int index, int shader_type) {
 void Shader::attachShader(int index) {
   GLint success;
 
-  printf("Attach Shader: %d\n", index);
+  LOGD("Attach Shader: %d", index);
   glAttachShader(program, shaders[index]);
 
   glLinkProgram(program);
@@ -106,8 +111,8 @@ void Shader::attachShader(int index) {
   if (!success) {
     GLchar infoLog[MAX_INFO_LOG_SIZE];
     glGetProgramInfoLog(program, MAX_INFO_LOG_SIZE, NULL, infoLog);
-    fprintf(stderr, "Error in program #%d linkage!\n", index);
-    fprintf(stderr, "Info log: %s\n", infoLog);
+    LOGE("Error in program #%d linkage!", index);
+    LOGE("Info log: %s", infoLog);
     std::cout << infoLog << std::endl;
     return;
   }
@@ -125,8 +130,8 @@ void Shader::validate() {
     if (!success) {
       GLchar infoLog[MAX_INFO_LOG_SIZE];
       glGetProgramInfoLog(program, MAX_INFO_LOG_SIZE, NULL, infoLog);
-      fprintf(stderr, "Error in program validation!\n");
-      fprintf(stderr, "Info log: %s\n", infoLog);
+      LOGE("Error in program validation!");
+      LOGE("Info log: %s", infoLog);
       return;
     }
 

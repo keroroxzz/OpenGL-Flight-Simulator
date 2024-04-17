@@ -1,6 +1,5 @@
 #include "interfaces/RenderEngine_Interface.h"
 
-class RenderEngine : public RenderEngine_Interface {
+class RenderEngine : public iRenderEngine {
   void render();
-  static RenderEngine_Interface* create();
 };
