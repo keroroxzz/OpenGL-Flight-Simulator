@@ -29,6 +29,7 @@ include_directories(
 set(SHARED_LIBS "")
 add_subdirectory(physics_engine)
 add_subdirectory(render_engine)
+add_subdirectory(utils)
 link_libraries(${SHARED_LIBS})
 
 # ======== build main executable ========
