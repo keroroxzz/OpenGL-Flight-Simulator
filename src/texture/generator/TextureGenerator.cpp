@@ -1,12 +1,12 @@
 #include "TextureGenerator.h"
 
-TextureGenerator::TextureGenerator(char shader_path[],
+TextureGenerator::TextureGenerator(const char shader_path[],
                                    int width,
                                    int height,
                                    int depth,
                                    GLenum internalformat,
                                    GLint warpType)
-    : shader_path(shader_path),
+    : shader_path(Path(shader_path)),
       width(width),
       height(height),
       depth(depth),

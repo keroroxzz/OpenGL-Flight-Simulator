@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <vector>
+#include "utils/path_mgr/includes/path_mgr.h"
 
 using namespace std;
 
@@ -29,7 +30,7 @@ bool ObjModel::LoadObj(const char* pPathname,
       throw "File not found!";
 
     ifstream fin;
-    fin.open(pPathname, ios::in);
+    fin.open(Path(pPathname), ios::in);
 
     if (!fin.good())
       throw "Error loading file!";

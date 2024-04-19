@@ -1,15 +1,15 @@
 #include "Plane.h"
 
 F22::F22() {
-  body_o = new ObjModel("f22/f22_body.obj");
-  rudder_o = new ObjModel("f22/f22_rudder.obj");
-  aileronL_o = new ObjModel("f22/f22_aileron.obj");
-  aileronR_o = new ObjModel("f22/f22_aileron.obj", 0.0, 0.0, 1.0, -1.0, 1.0);
-  flapL_o = new ObjModel("f22/f22_flap.obj");
-  flapR_o = new ObjModel("f22/f22_flap.obj", 0.0, 0.0, 1.0, -1.0, 1.0);
-  elevatorL_o = new ObjModel("f22/f22_elevator.obj");
-  elevatorR_o = new ObjModel("f22/f22_elevator.obj", 0.0, 0.0, 1.0, -1.0, 1.0);
-  glass_o = new ObjModel("f22/f22_glass.obj");
+  body_o = new ObjModel("./f22/f22_body.obj");
+  rudder_o = new ObjModel("./f22/f22_rudder.obj");
+  aileronL_o = new ObjModel("./f22/f22_aileron.obj");
+  aileronR_o = new ObjModel("./f22/f22_aileron.obj", 0.0, 0.0, 1.0, -1.0, 1.0);
+  flapL_o = new ObjModel("./f22/f22_flap.obj");
+  flapR_o = new ObjModel("./f22/f22_flap.obj", 0.0, 0.0, 1.0, -1.0, 1.0);
+  elevatorL_o = new ObjModel("./f22/f22_elevator.obj");
+  elevatorR_o = new ObjModel("./f22/f22_elevator.obj", 0.0, 0.0, 1.0, -1.0, 1.0);
+  glass_o = new ObjModel("./f22/f22_glass.obj");
 
   plane = new DynamicModel(body_o, 19700.0);
   glass = new DynamicModel(glass_o, 0.0);

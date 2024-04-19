@@ -2,6 +2,7 @@
 
 #include "baseHeader.h"
 #include "utils/logger/includes/logger.h"
+#include "utils/path_mgr/includes/path_mgr.h"
 
 #define UNI_INT_1 -1
 #define UNI_FLOAT_1 0

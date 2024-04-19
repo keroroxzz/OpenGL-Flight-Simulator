@@ -29,7 +29,7 @@ bool Shader::addFromFile(const char* filename, int type) {
   if (currentIndex >= maxShaders)
     return 0;
 
-  compileShader(filename, currentIndex, type);
+  compileShader(Path(filename), currentIndex, type);
   attachShader(currentIndex);
   validate();
 

@@ -8,6 +8,8 @@
 #include "Plane.h"
 #include <chrono>
 
+#include "utils/logger/includes/logger.h"
+#include "utils/path_mgr/includes/path_mgr.h"
 
 class TextureGenerator{
 
@@ -21,14 +23,14 @@ class TextureGenerator{
     Shader *shader;
 
     unsigned int VBO[2];
-    char *shader_path;
+    const char *shader_path;
     
     // unsigned int texname;
     int width, height, depth;
     
 public:
     TextureGenerator(
-        char shader_path[],
+        const char shader_path[],
         int width, 
         int height,
         int depth, 

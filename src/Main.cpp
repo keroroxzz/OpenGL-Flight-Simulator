@@ -14,7 +14,9 @@
 #include "Shader.h"
 #include "TextureGenerator.h"
 #include "baseHeader.h"
+
 #include "utils/logger/includes/logger.h"
+
 #include "physics_engine/includes/interfaces/SimpleEngine_Interface.h"
 #include "render_engine/includes/interfaces/RenderEngine_Interface.h"
 
@@ -573,20 +575,8 @@ void mouse(int button, int state, int x, int y) {
   else if (button == 3)
     cameraZoom = cameraZoom * 0.9 + 0.05;
 }
-#include <libgen.h>        // dirname
-#include <linux/limits.h>  // PATH_MAX
-#include <unistd.h>        // readlink
-int main(int argc, char* argv[]) {
-  char result[PATH_MAX];
-  ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
-  const char* path;
-  if (count != -1) {
-    path = dirname(result);
-    printf("path: %s\n", path);
-  } else {
-    printf("readlink failed\n");
-  }
 
+int main(int argc, char* argv[]) {
   iSimpleEngine* engine = iSimpleEngine::create();
   engine->test();
 
