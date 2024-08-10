@@ -7,8 +7,10 @@ This is a hand-crafted flight simulator with simple air dynamic approximation an
 
 Install OpenGL dependencies
 
-    sudo apt-get install build-essential libgl1-mesa-devlibglu1-mesa-dev 
-    sudo apt-get install freeglut3-dev libglew1.8 libglew-dev libgl1-mesa-glx
+    sudo apt-get install build-essential libgl1-mesa-dev libglu1-mesa-dev 
+    sudo apt-get install freeglut3-dev libglew1.8 libglew-dev
+
+Note: Please install available version of libglew depending on your system version.
 
 Compile the project
 
