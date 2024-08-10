@@ -10,14 +10,13 @@
 #define LOG(head, name, fmt, ...)                                                     \
     {                                                                                 \
         char buf[MAX_LOG_SIZE] = {0};                                                 \
-        snprintf(buf, sizeof(buf) - 1, "%s%s: " fmt "\n", head, name, ##__VA_ARGS__); \
-        _my_logs_ += buf;                                                             \
+        snprintf(buf, sizeof(buf) - 1, "%s(%s)  " fmt "\n", head, name, ##__VA_ARGS__); \
         std::cout << buf;                                                             \
     }
 
 #define LOGI(fmt, ...)                                \
     {                                                 \
-        LOG("\x1b[0m[INFO]", "", fmt, ##__VA_ARGS__); \
+        LOG("\x1b[0m[INFO] ", "", fmt, ##__VA_ARGS__); \
     }
 
 #ifdef DEBUG
@@ -41,8 +40,5 @@
         LOG("\x1b[1;31m[FATAL] ", __FUNCTION__, fmt " {%s:%d}", ##__VA_ARGS__, __FILE__, __LINE__); \
         exit(1);                                                                                    \
     }
-
-#define USE_LOGS() \
-    std::string _my_logs_
 
 #endif // LOGGER_H

@@ -41,7 +41,7 @@ bool Shader::addFromFile(const char* filename, int type) {
 
 void Shader::use() {
   glUseProgram(program);
-  LOGD("Use shader: %d", program);
+  // LOGD("Use shader: %d", program);
 }
 
 GLchar* Shader::loadShaderText(const char* fileName) {

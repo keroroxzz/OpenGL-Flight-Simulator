@@ -18,7 +18,7 @@
 
 class Shader
 {
-	USE_LOGS();
+	
 
 private:
 	const int maxShaders;

@@ -20,11 +20,11 @@
 #include "physics_engine/includes/interfaces/SimpleEngine_Interface.h"
 #include "render_engine/includes/interfaces/RenderEngine_Interface.h"
 
-USE_LOGS();
+
 
 bool showForce = true;
 bool isShowingForce = false;
-bool isShowingF22 = true;
+bool isShowingF22 = false;
 
 bool running = false;
 float sim_time = 0.0;
@@ -52,7 +52,6 @@ GLfloat planePos[] = {0.0f, 0.0f, 0.0f, 1.0f};
 GLfloat cameraPos[] = {-11.218950, -11.772061, 1.376742};
 GLfloat targetCamPos[] = {-11.218950, -11.772061, 1.376742};
 GLdouble cameraZoom = 0.5;
-GLfloat camax = 1.0, camay = 0.7;
 
 ObjModel* map;
 F22* f22;
@@ -190,6 +189,9 @@ void RenderScene(void) {
 
   glViewport(0, 0, windowWidth, windowHeight);
 
+  // LOGD("Camera position: %f %f %f", cameraPos[0], cameraPos[1], cameraPos[2]);
+  // LOGD("View direction: %f %f %f", planePos[0] - cameraPos[0], planePos[1] - cameraPos[1], planePos[2] - cameraPos[2]);
+
   // Clear the window with current clearing color
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -245,21 +247,21 @@ void RenderScene(void) {
   GLint model_view_loc = skyShader->uniformLocation("ModelViewMatrix");
 
   glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, texture);
-  skyShader->setUniform("sampler0", UNI_TEXTURE, 0);
+  // glBindTexture(GL_TEXTURE_2D, texture);
+  // skyShader->setUniform("sampler0", UNI_TEXTURE, 0);
 
-  cloudNoise->bindTexture(GL_TEXTURE0 + 1);
-  skyShader->setUniform("test", UNI_TEXTURE, 0, 1, 0U, 1);
+  // cloudNoise->bindTexture(GL_TEXTURE0 + 1);
+  // skyShader->setUniform("test", UNI_TEXTURE, 0, 1, 0U, 1);
 
   atmTexture->bindTexture(GL_TEXTURE0 + 2);
-  skyShader->setUniform("atmText", UNI_TEXTURE, 0, 1, 0U, 2);
+  skyShader->setUniform("atmosphere_texture", UNI_TEXTURE, 0, 1, 0U, 2);
 
   glColor3f(1.0f, 1.0f, 1.0f);
 
-  glPushMatrix();
-  glTranslatef(10000.0, 0.0, -700.0);
-  map->draw(2, GL_TRIANGLES, model_view_loc);
-  glPopMatrix();
+  // glPushMatrix();
+  // glTranslatef(10000.0, 0.0, -700.0);
+  // map->draw(2, GL_TRIANGLES, model_view_loc);
+  // glPopMatrix();
 
   // Draw dome
   glColor3f(0.68f, 0.75f, 0.85f);
@@ -450,7 +452,7 @@ void ReloadShaders(bool counting = false) {
 
   skyShader = new Shader(2);
   skyShader->addFromFile("./shaders/vertex/cloudworks.vs", GL_VERTEX_SHADER);
-  skyShader->addFromFile("./shaders/frag/cloudworks.fs", GL_FRAGMENT_SHADER);
+  skyShader->addFromFile("./shaders/frag/atmosphere.fs", GL_FRAGMENT_SHADER);
 
   lightingShader = new Shader(2);
   lightingShader->addFromFile("./shaders/vertex/lighting.vs", GL_VERTEX_SHADER);
@@ -462,19 +464,52 @@ void ReloadShaders(bool counting = false) {
   atmTexture->generateTexture();
 }
 
+void moveCamera(double scale) {
+  M3DVector3d direction = {
+      planePos[0] - cameraPos[0], 
+      planePos[1] - cameraPos[1],
+      planePos[2] - cameraPos[2]
+  };
+  m3dNormalizeVector(direction);
+  m3dScaleVector3(direction, scale);
+
+  planePos[0] += direction[0];
+  planePos[1] += direction[1];
+  planePos[2] += direction[2];
+  targetCamPos[0] += direction[0];
+  targetCamPos[1] += direction[1];
+  targetCamPos[2] += direction[2];
+  m3dCopyVector3(cameraPos, targetCamPos);
+  f22->setPosition(planePos);
+}
+
 void SpecialKeys(int key, int x, int y) {
   switch (key) {
     case GLUT_KEY_LEFT:
-      camax -= 0.05f;
+      planePos[0] = 0.0f;
+      planePos[1] = 0.0f;
+      planePos[2] = 0.0f;
+      targetCamPos[0] = 5.0f;
+      targetCamPos[1] = 2.0f;
+      targetCamPos[2] = -1.0f;
+      m3dCopyVector3(cameraPos, targetCamPos);
+      f22->setPosition(planePos);
       break;
     case GLUT_KEY_RIGHT:
-      camax += 0.05f;
+      planePos[0] = 100000000.0;
+      planePos[1] = 0.0f;
+      planePos[2] = 0.0f;
+      targetCamPos[0] = 100000005.0;
+      targetCamPos[1] = 2.0f;
+      targetCamPos[2] = -1.0f;
+      m3dCopyVector3(cameraPos, targetCamPos);
+      f22->setPosition(planePos);
       break;
     case GLUT_KEY_UP:
-      camay += 0.05f;
+      moveCamera(1000.0);
       break;
     case GLUT_KEY_DOWN:
-      camay -= 0.05f;
+      moveCamera(-1000.0);
       break;
     case GLUT_KEY_F1:
       running = !running;
@@ -597,7 +632,7 @@ int main(int argc, char* argv[]) {
 
   skyShader = new Shader(2);
   skyShader->addFromFile("./shaders/vertex/cloudworks.vs", GL_VERTEX_SHADER);
-  skyShader->addFromFile("./shaders/frag/cloudworks.fs", GL_FRAGMENT_SHADER);
+  skyShader->addFromFile("./shaders/frag/atmosphere.fs", GL_FRAGMENT_SHADER);
 
   lightingShader = new Shader(2);
   lightingShader->addFromFile("./shaders/vertex/lighting.vs", GL_VERTEX_SHADER);
@@ -622,8 +657,8 @@ int main(int argc, char* argv[]) {
 
   cloudNoise->generateTexture();
 
-  atmTexture = new TextureGenerator("./shaders/compute/atomosphere.comp", 256,
-                                    256, 128, GL_RG16F, GL_CLAMP_TO_EDGE);
+  atmTexture = new TextureGenerator("./shaders/compute/atmosphere.comp", 512,
+                                    512, 1, GL_RG32F, GL_CLAMP_TO_EDGE);
 
   atmTexture->generateTexture();
 

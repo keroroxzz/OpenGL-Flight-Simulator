@@ -2,13 +2,13 @@
 #include "utils/path_mgr/includes/path_mgr.h"
 #include "utils/logger/includes/logger.h"
 
-USE_LOGS();
+
 
 // const std::string exec_path;
 
 std::string Path::exec_path = "";
 
-Path::Path(const char *path): path(path){
+Path::Path(const char *path_): path(path_){
 
   // initialize the path of the executable file
   if (exec_path.size() == 0) {
@@ -25,9 +25,8 @@ Path::Path(const char *path): path(path){
   if (this->path[0] == '.'){
     this->path = exec_path + this->path.substr(1);
   }
-  LOGD("path: %s", path);
 }
 
-Path::operator const char *(){
+Path::operator const char *() const{
   return this->path.c_str();
 }

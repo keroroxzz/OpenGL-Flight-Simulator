@@ -1,12 +1,12 @@
 #include "TextureGenerator.h"
 
-TextureGenerator::TextureGenerator(const char shader_path[],
+TextureGenerator::TextureGenerator(const char shader_path_[],
                                    int width,
                                    int height,
                                    int depth,
                                    GLenum internalformat,
                                    GLint warpType)
-    : shader_path(Path(shader_path)),
+    : shader_path(shader_path_),
       width(width),
       height(height),
       depth(depth),
@@ -26,6 +26,8 @@ TextureGenerator::TextureGenerator(const char shader_path[],
 
   if (textureType == GL_TEXTURE_3D)
     leveled = GL_TRUE;
+  else
+    leveled = GL_FALSE;
 
   // generate texture
   glGenTextures(1, &texture);
@@ -40,7 +42,14 @@ TextureGenerator::TextureGenerator(const char shader_path[],
   if (textureType == GL_TEXTURE_3D)
     glTexParameteri(textureType, GL_TEXTURE_WRAP_R, warpType);
 
-  glTexStorage3D(textureType, 1, internalformat, width, height, depth);
+  if (textureType == GL_TEXTURE_3D)
+    glTexStorage3D(textureType, 1, internalformat, width, height, depth);
+  else if (textureType == GL_TEXTURE_2D)
+    glTexStorage2D(textureType, 1, internalformat, width, height);
+  else if(textureType == GL_TEXTURE_1D)
+    glTexStorage1D(textureType, 1, internalformat, width);
+  else
+    LOGE("Invalid texture type %d", textureType);
 
   // reset texture binding
   glBindTexture(textureType, 0);

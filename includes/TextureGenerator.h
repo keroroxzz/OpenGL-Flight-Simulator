@@ -23,7 +23,7 @@ class TextureGenerator{
     Shader *shader;
 
     unsigned int VBO[2];
-    const char *shader_path;
+    const Path shader_path;
     
     // unsigned int texname;
     int width, height, depth;

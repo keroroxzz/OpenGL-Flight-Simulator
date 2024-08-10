@@ -1,4 +1,7 @@
 #include "Plane.h"
+#include "utils/logger/includes/logger.h"
+
+
 
 F22::F22() {
   body_o = new ObjModel("./f22/f22_body.obj");
@@ -137,6 +140,7 @@ void F22::thrustControl(float v) {
 
 void F22::setPosition(M3DVector3f pos) {
   plane->setPostion(pos[0], pos[1], pos[2]);
+  LOGD("Position set to (%f, %f, %f)", pos[0], pos[1], pos[2]);
 }
 
 void F22::setDisplacement(M3DVector3f displacement) {

@@ -18,7 +18,7 @@ private:
 public:
 
     Path(const char *path);
-    operator const char *();
+    operator const char *() const;
 };
 
 #endif // PATH_MGR_H
