@@ -33,7 +33,7 @@ vec3 scatteringFactor = waveLengthFactor/rayleighDecay;
 
 
 // const float atmosphereRadius = 5.0;
-// const float groundHeight = 3.5;
+// const float groundHeight = 4.0;
 const float atmosphereRadius = 6.421;
 const float groundHeight = 6.371;
 const vec3 atmOrigin = vec3(0.0, 0.0, -groundHeight);
@@ -143,10 +143,10 @@ vec3 LightDecay(float densityR, float densityM)
     return clamp(vec3(exp(-densityR/scatteringFactor - densityM*mieDecay)), 0.0, 1.0);
 }
 
-vec4 getVerticalVecHeight(dvec3 atmpos)
+vec4 getVerticalVecHeight(vec3 atmpos)
 {
-    double r = length(atmpos);
-    double height = (r-groundHeight)/(atmosphereRadius-groundHeight);
+    float r = length(atmpos);
+    float height = (r-groundHeight)/(atmosphereRadius-groundHeight);
     return vec4(atmpos/r, height);
 }
 
@@ -165,10 +165,11 @@ vec3 clamp(vec3 v, float min, float max)
     return vec3(clamp(v.x, min, max), clamp(v.y, min, max), clamp(v.z, min, max));
 }
 
-vec2 sampleAtmosphere(dvec3 atmpos, vec3 dir)
+#define M_PI 3.1415926535897932384626433832795
+vec2 sampleAtmosphere(vec3 atmpos, vec3 dir)
 {
-    dvec4 atmHeight = getVerticalVecHeight(atmpos);
-    vec2 texcoord = vec2(pow(float(atmHeight.w), 0.5), dot(atmHeight.xyz, dir)*0.5+0.5);
+    vec4 atmHeight = getVerticalVecHeight(atmpos);
+    vec2 texcoord = vec2(pow(atmHeight.w, 0.5), pow(acos(dot(atmHeight.xyz, dir))/M_PI, 2));
     return texture(atmosphere_texture, texcoord).xy;
 }
 
@@ -187,23 +188,23 @@ vec3 AtmosphereScattering(vec3 background, vec3 camPos, vec3 ray, vec3 lightStre
         return background;
 
     vec3 marchPos = start;
-    vec3 marchStep = (end - start)/atmosphereStep;
-
+    vec3 marchStep = (end - start)/atmosphereStep*0.95; // 0.95 to avoid the end point ambiguity
     vec2 lastViewToPoint = vec2(0.0);
     vec2 throughShell = sampleAtmosphere(start, ray);
-
+    
+    // return vec3(throughShell*20.0, 0.0);
     for(float i=0.0; i<atmosphereStep; i++)
     {
+        marchPos+=marchStep.xyz;
+        // return vec3(sampleAtmosphere(marchPos, ray)*20.0, 0.0);
         vec2 viewToPoint = throughShell - sampleAtmosphere(marchPos, ray);
-        vec2 pointToSun = sampleAtmosphere(marchPos, lightDirection);
+        vec2 pointToSun = sampleAtmosphere(marchPos-marchStep.xyz/2.0, lightDirection);
         vec2 viewToSun = (pointToSun + viewToPoint);
 
         vec2 density = (viewToPoint - lastViewToPoint);
 
         intensity += LightDecay(viewToSun.x, viewToSun.y)*(raylei*density.x + mie*density.y) + 0.0000001/scatteringFactor*LightDecay(0.0, pointToSun.y);
         lastViewToPoint = viewToPoint;
-
-        marchPos+=marchStep.xyz;
     }
     return lightStrength*intensity + background*LightDecay(throughShell.x, throughShell.y) + 0.004/scatteringFactor*LightDecay(0.0, throughShell.y);
 }
@@ -214,6 +215,10 @@ vec3 Game2Atm(vec3 pos)
 }
 
 void main(void) {
+    // vec4 ndc = vec4(gl_FragCoord.x / windowWidth, gl_FragCoord.y / windowHeight, 0.0, 0.0);
+    // FragColor = vec4(texture(atmosphere_texture, ndc.xy).xy*vec2(1.0, 0.0),0.0,0.0);
+    // return;
+
     vec3 direction = normalize(wNorm);
     vec3 sun = sunLightStrength*vec3(smoothstep(0.9999, 1.0, dot(SunDirection,direction)));
     vec3 c = AtmosphereScattering(sun, Game2Atm(camera.xyz), direction, sunLightStrength, SunDirection);

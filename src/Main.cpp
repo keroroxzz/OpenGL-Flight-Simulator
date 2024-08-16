@@ -657,8 +657,8 @@ int main(int argc, char* argv[]) {
 
   cloudNoise->generateTexture();
 
-  atmTexture = new TextureGenerator("./shaders/compute/atmosphere.comp", 512,
-                                    512, 1, GL_RG32F, GL_CLAMP_TO_EDGE);
+  atmTexture = new TextureGenerator("./shaders/compute/atmosphere.comp", 256,
+                                    1024, 1, GL_RG32F, GL_CLAMP_TO_EDGE);//
 
   atmTexture->generateTexture();
 
