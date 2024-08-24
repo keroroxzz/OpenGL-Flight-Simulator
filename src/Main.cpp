@@ -564,7 +564,7 @@ void idle() {
   cameraPos[2] = cameraPos[2] * 0.9 + targetCamPos[2] * 0.1;
 
   sim_time += 0.001;
-  usleep(10);
+  usleep(33);
 }
 
 void mousePressed(int x_, int y_) {
@@ -657,8 +657,8 @@ int main(int argc, char* argv[]) {
 
   cloudNoise->generateTexture();
 
-  atmTexture = new TextureGenerator("./shaders/compute/atmosphere.comp", 256,
-                                    1024, 1, GL_RG32F, GL_CLAMP_TO_EDGE);//
+  atmTexture = new TextureGenerator("./shaders/compute/atmosphere.comp", 128,
+                                    128, 1, GL_RG32F, GL_CLAMP_TO_EDGE);//
 
   atmTexture->generateTexture();
 

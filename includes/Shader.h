@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+#include <vector>
 #include "baseHeader.h"
 #include "utils/logger/includes/logger.h"
 #include "utils/path_mgr/includes/path_mgr.h"
@@ -18,8 +20,6 @@
 
 class Shader
 {
-	
-
 private:
 	const int maxShaders;
 
@@ -41,7 +41,7 @@ public:
 
 	
 private:
-	GLchar* loadShaderText(const char* fileName);
+	std::string loadShaderText(const char* fileName, std::vector<Path> include_chain={});
 	void compileShader(const char* shadername, int index, int shader_type);
 	void attachShader(int index);
 	void validate();

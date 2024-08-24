@@ -44,7 +44,17 @@ void Shader::use() {
   // LOGD("Use shader: %d", program);
 }
 
-GLchar* Shader::loadShaderText(const char* fileName) {
+std::string Shader::loadShaderText(const char* fileName, std::vector<Path> include_chain) {
+
+  // prevent include loop
+  for (Path & path: include_chain) {
+    if (path == Path(fileName)) {
+      LOGE("Include loop detected: %s", path.operator const char *());
+      return "";
+    }
+  }
+
+  // load shader text
   GLchar* text = NULL;
   GLint length = 0;
 
@@ -60,30 +70,66 @@ GLchar* Shader::loadShaderText(const char* fileName) {
       fread(text, 1, length, fp);
     text[length] = '\0';
 
+    // remove comments, and newlines for included shaders
+    if (text != NULL && include_chain.size() > 0) {
+      bool is_comment = false;
+      for (int i=0;i<length;i++) {
+        if (i<length-1 && text[i] == '/' && text[i+1] == '/') {
+          is_comment = true;
+        }
+        if (text[i] == '\n') {
+          text[i] = ' ';
+          is_comment = false;
+        }
+        else if (is_comment) {
+          text[i] = ' ';
+        }
+      }
+    }
+
     fclose(fp);
   } else {
     LOGE("Unable to load \"%s\"", fileName);
     return NULL;
   }
 
-  return text;
+  if (text == NULL)
+    return "";
+
+  std::string str(text);
+  free(text);
+
+  // include other shaders
+  int beg = str.length()-1;
+  while (true) {
+    beg = str.rfind("#include<", beg);
+    if (beg == std::string::npos)
+      break;
+    int end = str.find(">", beg);
+    if (end == std::string::npos)
+      break;
+    Path include_path = Path(str.substr(beg + 9, end - beg - 9).c_str());
+    include_chain.push_back(Path(fileName));
+    LOGD("Include shader: %s", include_path.operator const char *());
+    std::string included_shader = loadShaderText(include_path, include_chain);
+    str.replace(beg, end - beg + 1, included_shader);
+  }
+
+  return str;
 }
 
 void Shader::compileShader(const char* shadername, int index, int shader_type) {
-  GLchar* fsString;
+  std::string fsString;
   const GLchar* fsStringPtr[1];
   GLint success;
 
   LOGD("Compile Shader: %s", shadername);
   fsString = loadShaderText(shadername);
 
-  if (fsString == NULL)
-    return;
 
   shaders[index] = glCreateShader(shader_type);
-  fsStringPtr[0] = fsString;
+  fsStringPtr[0] = fsString.c_str();
   glShaderSource(shaders[index], 1, fsStringPtr, NULL);
-  free(fsString);
 
   // Compile shaders and check for any errors
   glCompileShader(shaders[index]);

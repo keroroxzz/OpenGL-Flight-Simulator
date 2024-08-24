@@ -1,0 +1,132 @@
+#version 430 core
+layout (local_size_x=1, local_size_y=1) in;
+
+layout (rg32f, binding = 1) uniform image2D output_image;
+
+float fix=0.0000001;
+float oxygenDensity = 0.3;
+float oxygenDensitySolid = 0.0;
+float oxygenCondensitivity = 1.0;
+
+float vaporDensity = 0.0001*0.0;
+float vaporDensitySolid = 0.0;
+float vaporCondensitivity = 150.0;
+
+float totalStep = 10.0;
+// const float atmosphereRadius = 6.421;
+// const float groundHeight = 6.371;
+const float atmosphereRadius = 5;
+const float groundHeight = 4.0;
+
+vec4 groundSphere = vec4(0.0, 0.0, 0.0, groundHeight);
+vec4 atmosphereSphere = vec4(0.0, 0.0, 0.0, atmosphereRadius);
+
+float saturate(float v)
+{
+    return min(max(v,0.0),1.0);
+}
+
+vec3 saturate(vec3 v)
+{
+    return vec3(saturate(v.x),saturate(v.y),saturate(v.z));
+}
+
+float l(float a, float b, float x){
+    return a*(1.0-x)+b*x;
+}
+
+void sphereCast(vec3 origin, vec3 ray, vec4 sphere, out vec3 start, out vec3 end)
+{
+    vec3 p = origin - sphere.xyz;
+    
+    float 
+        r = length(p),
+        d = length(cross(p, ray));    //nearest distance from view-ray to the center
+        
+    if (d >= sphere.w+fix) {
+        start = vec3(0.0);
+        end = vec3(0.0);
+        return;    //early exit
+    }
+        
+    float
+        sr = sqrt(sphere.w*sphere.w - d*d),    //radius of slicing circle
+        dr = -dot(p, ray);    //distance from camera to the nearest point\
+    
+    if(r>sphere.w && dr>0){
+        start = origin + ray * (dr-sr);
+        end = origin + ray * (dr+sr);
+    }else if(r<=sphere.w){
+        start = origin;
+        end = origin + ray * (dr+sr);
+    }else{
+        start = vec3(0.0);
+        end = vec3(0.0);
+    }
+}
+
+float Density(vec3 pos, vec4 sphere, float strength, float solidStrength, float condense)
+{
+    float h = length(pos-sphere.xyz)-groundHeight;
+    float ep = exp(-(sphere.w-groundHeight)*condense);
+    
+    if (h<-0.001)
+        return solidStrength;
+    
+    if (h>sphere.w-groundHeight)
+        return 0.0;
+
+    return (exp(-h*condense)-ep)/(1.0-ep)*strength;
+}
+  
+vec3 IntegrateDensity(vec3 marchPos, vec3 marchStep, float atmosphereStep, vec4 sphere)
+{
+    float step_len = length(marchStep);
+    vec3 density = vec3(0.0);
+    vec3 pamount = vec3(0.0);
+    for(float i=0.0; i<atmosphereStep; i++)
+    {
+        float oxygen = Density(
+            marchPos, sphere, oxygenDensity, oxygenDensitySolid, oxygenCondensitivity);
+        float vapor = Density(
+            marchPos, sphere, vaporDensity, vaporDensitySolid, vaporCondensitivity);
+        density += (pamount+vec3(oxygen, vapor, 0.0))*step_len/2.0;
+        pamount = vec3(oxygen, vapor, 0.0);
+        marchPos += marchStep.xyz;
+    }
+    
+    return density;
+}
+#define M_PI 3.1415926535897932384626433832795
+void main(void)
+{
+    vec2 pos = vec2(gl_GlobalInvocationID.xy) / vec2(gl_NumWorkGroups.xy*gl_WorkGroupSize.xy);
+    
+    vec3 startPos = vec3(
+        0.0,
+        0.0,
+        mix(groundHeight+0.001, atmosphereRadius-0.001, pow(pos.x, 2)));
+        // mix(groundHeight, atmosphereRadius, pos.x));
+    
+    // imageStore(output_image, ivec2(gl_GlobalInvocationID.xy), vec4(pos.y,0.0,0.0, 0.0));
+    // return;
+    float angle = l(0.0, M_PI, pow(pos.y, 0.5));
+    // float angle = l(0.0, M_PI, pos.y);
+    vec3 ray = vec3(sin(angle), 0.0, cos(angle));
+    vec3 start, end;
+    sphereCast(startPos, ray, atmosphereSphere, start, end);
+    vec3 gstart, gend;
+    sphereCast(startPos, ray, groundSphere, gstart, gend);
+
+    vec3 density = vec3(0.0);
+    if (gstart != vec3(0.0)){
+        // vec3 step = (gstart-start)/totalStep/2.0;
+        density += IntegrateDensity(startPos, (gstart-start)/totalStep, totalStep, atmosphereSphere);
+        density += IntegrateDensity(gend, (end-gend)/totalStep, totalStep, atmosphereSphere);
+    } else {
+        vec3 step = (end-start)/totalStep;
+        density += IntegrateDensity(start, step, totalStep, atmosphereSphere);
+    }
+    
+    imageStore(output_image, ivec2(gl_GlobalInvocationID.xy), vec4(density, 0.0));
+}

@@ -19,6 +19,7 @@ public:
 
     Path(const char *path);
     operator const char *() const;
+    bool operator ==(const Path& other) const;
 };
 
 #endif // PATH_MGR_H

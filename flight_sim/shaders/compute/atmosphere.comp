@@ -3,107 +3,11 @@ layout (local_size_x=1, local_size_y=1) in;
 
 layout (rg32f, binding = 1) uniform image2D output_image;
 
-float fix=0.0000001;
-float oxygenDensity = 0.3;
-float oxygenDensitySolid = 0.00;
-float oxygenCondensitivity = 1.0;
+#include<./shaders/common/atmosphere_settings.fs>
+#include<./shaders/common/casting.fs>
+#include<./shaders/common/basic.fs>
+#define M_PI 3.1415926535897932384626433832795
 
-float vaporDensity = 0.0001;
-float vaporDensitySolid = 0.001;
-float vaporCondensitivity = 150.0;
-
-float totalStep = 2345.0;
-float stepLength = 0.1;
-const float atmosphereRadius = 6.421;
-const float groundHeight = 6.371;
-// const float atmosphereRadius = 5;
-// const float groundHeight = 4.0;
-
-vec4 groundSphere = vec4(0.0, 0.0, 0.0, groundHeight);
-vec4 atmosphereSphere = vec4(0.0, 0.0, 0.0, atmosphereRadius);
-
-// float dexp(float x)
-// {
-//     return exp(float(x));
-// }
-// float dsin(float x)
-// {
-//     return sin(float(x));
-// }
-// float dcos(float x)
-// {
-//     return cos(float(x));
-// }
-
-float saturate(float v)
-{
-    return min(max(v,0.0),1.0);
-}
-
-vec3 saturate(vec3 v)
-{
-    return vec3(saturate(v.x),saturate(v.y),saturate(v.z));
-}
-
-float l(float a, float b, float x){
-    return a*(1.0-x)+b*x;
-}
-
-void sphereCast(vec3 origin, vec3 ray, vec4 sphere, out vec3 start, out vec3 end)
-{
-    vec3 p = origin - sphere.xyz;
-    
-    float 
-        r = length(p),
-        d = length(cross(p, ray));    //nearest distance from view-ray to the center
-        
-    if (d >= sphere.w+fix) {
-        start = vec3(0.0);
-        end = vec3(0.0);
-        return;    //early exit
-    }
-        
-    float
-        sr = sqrt(sphere.w*sphere.w - d*d),    //radius of slicing circle
-        dr = -dot(p, ray);    //distance from camera to the nearest point\
-    
-    if(r>sphere.w && dr>0){
-        start = origin + ray * (dr-sr);
-        end = origin + ray * (dr+sr);
-    }else if(r<=sphere.w){
-        start = origin;
-        end = origin + ray * (dr+sr);
-    }else{
-        start = vec3(0.0);
-        end = vec3(0.0);
-    }
-}
-
-
-float sphereCast2(vec3 origin, vec3 ray, vec4 sphere)
-{
-    vec3 p = origin - sphere.xyz;
-    
-    float 
-        r = length(p),
-        d = length(cross(p, ray));    //nearest distance from view-ray to the center
-        
-    if (d >= sphere.w+fix) {
-        return 0.0;    //early exit
-    }
-        
-    float
-        sr = sqrt(sphere.w*sphere.w - d*d),    //radius of slicing circle
-        dr = -dot(p, ray);    //distance from camera to the nearest point\
-    
-    if(r>sphere.w && dr>0){
-        return sr*2.0;
-    }else if(r<=sphere.w){
-        return (dr+sr);
-    }else{
-        return 0.0;
-    }
-}
 
 float Density(vec3 pos, vec4 sphere, float strength, float solidStrength, float condense)
 {
@@ -111,7 +15,7 @@ float Density(vec3 pos, vec4 sphere, float strength, float solidStrength, float 
     float ep = exp(-(sphere.w-groundHeight)*condense);
     
     if (h<0.0)
-        return solidStrength;
+        h=0.0;
     
     if (h>sphere.w-groundHeight)
         return 0.0;
@@ -137,18 +41,39 @@ vec3 IntegrateDensity(vec3 marchPos, vec3 marchStep, float atmosphereStep, vec4 
     
     return density;
 }
+
 #define M_PI 3.1415926535897932384626433832795
+void textcoordToPosRay(vec2 texcoord, out vec3 pos, out vec3 ray)
+{
+    // non-linear mapping, to make the resolution higher near the horizon
+    texcoord.x = pow(texcoord.x, 2);
+    texcoord.y = sign(texcoord.y-0.5)*pow(texcoord.y-0.5, 2);
+    texcoord.y = 2*texcoord.y+0.5;
+
+    // calculate the position with height varing against the texcoord.x
+    pos = vec3(
+        0.0,
+        0.0,
+        mix(groundHeight, atmosphereRadius, texcoord.x));
+    
+    // calculate the ray with its angle varing against the texcoord.y
+    float angle = 0.0;
+    float height_ratio = clamp(groundHeight/pos.z, 0.0, 1.0); // ensure the height_ratio is in [0,1]
+    float horizontal_angle = M_PI-asin(height_ratio);
+    if (texcoord.y < 0.5)
+        angle = l(0.0, horizontal_angle, texcoord.y*2.0);
+    else
+        angle = l(horizontal_angle, M_PI, (texcoord.y-0.5)*2.0);
+    ray = vec3(sin(angle), 0.0, cos(angle));
+}
+
 void main(void)
 {
-    vec2 pos = vec2(gl_GlobalInvocationID.xy) / vec2(gl_NumWorkGroups.xy*gl_WorkGroupSize.xy);
-    
-    vec3 startPos = vec3(
-        0.0,
-        0.0,
-        mix(groundHeight, atmosphereRadius, pow(pos.x, 2)));
+    vec3 startPos;
+    vec3 ray;
+    vec2 texcoord = vec2(gl_GlobalInvocationID.xy) / vec2(gl_NumWorkGroups.xy*gl_WorkGroupSize.xy);
+    textcoordToPosRay(texcoord, startPos, ray);
 
-    float angle = l(0.0, M_PI, pow(pos.y, 0.5));
-    vec3 ray = vec3(sin(angle), 0.0, cos(angle));
     vec3 start, end;
     sphereCast(startPos, ray, atmosphereSphere, start, end);
     vec3 gstart, gend;
@@ -156,12 +81,8 @@ void main(void)
 
     vec3 density = vec3(0.0);
     if (gstart != vec3(0.0)){
-    }
-    if (gstart != vec3(0.0)){
-        vec3 step = (gstart-start)/totalStep/2.0;
-        density += IntegrateDensity(startPos, step, totalStep, atmosphereSphere);
-        density += IntegrateDensity(gend, step, totalStep, atmosphereSphere);
-        density += length(gstart-gend)*vec3(oxygenDensitySolid, vaporDensitySolid, 0.0);
+        density += IntegrateDensity(startPos, (gstart-start)/totalStep, totalStep, atmosphereSphere);
+        density += IntegrateDensity(gend, (end-gend)/totalStep, totalStep, atmosphereSphere);
     } else {
         vec3 step = (end-start)/totalStep;
         density += IntegrateDensity(start, step, totalStep, atmosphereSphere);

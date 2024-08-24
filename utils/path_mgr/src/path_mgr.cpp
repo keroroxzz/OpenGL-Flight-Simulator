@@ -27,6 +27,10 @@ Path::Path(const char *path_): path(path_){
   }
 }
 
-Path::operator const char *() const{
+Path::operator const char *() const {
   return this->path.c_str();
+}
+
+bool Path::operator ==(const Path& other) const {
+  return this->path == other.path;
 }
