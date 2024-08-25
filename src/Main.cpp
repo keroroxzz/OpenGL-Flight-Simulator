@@ -250,8 +250,8 @@ void RenderScene(void) {
   // glBindTexture(GL_TEXTURE_2D, texture);
   // skyShader->setUniform("sampler0", UNI_TEXTURE, 0);
 
-  // cloudNoise->bindTexture(GL_TEXTURE0 + 1);
-  // skyShader->setUniform("test", UNI_TEXTURE, 0, 1, 0U, 1);
+  cloudNoise->bindTexture(GL_TEXTURE0 + 1);
+  skyShader->setUniform("worley_noise", UNI_TEXTURE, 0, 1, 0U, 1);
 
   atmTexture->bindTexture(GL_TEXTURE0 + 2);
   skyShader->setUniform("atmosphere_texture", UNI_TEXTURE, 0, 1, 0U, 2);
@@ -458,8 +458,9 @@ void ReloadShaders(bool counting = false) {
   lightingShader->addFromFile("./shaders/vertex/lighting.vs", GL_VERTEX_SHADER);
   lightingShader->addFromFile("./shaders/frag/lighting.fs", GL_FRAGMENT_SHADER);
 
-  // cloudNoise->reloadShaders();
-  // cloudNoise->generateTexture();
+  cloudNoise->reloadShaders();
+  cloudNoise->generateTexture();
+
   atmTexture->reloadShaders();
   atmTexture->generateTexture();
 }
@@ -652,13 +653,13 @@ int main(int argc, char* argv[]) {
   printf("init f22...\n");
   f22->updatePhysic();
 
-  cloudNoise = new TextureGenerator("./shaders/compute/cloudNoise.comp", 64, 64,
-                                    64, GL_R16F, GL_MIRRORED_REPEAT);
+  cloudNoise = new TextureGenerator("./shaders/compute/cloudNoise.comp", 128, 128,
+                                    128, GL_R16F, GL_MIRRORED_REPEAT);
 
   cloudNoise->generateTexture();
 
   atmTexture = new TextureGenerator("./shaders/compute/atmosphere.comp", 128,
-                                    128, 1, GL_RG32F, GL_CLAMP_TO_EDGE);//
+                                    128, 1, GL_RGBA32F, GL_CLAMP_TO_EDGE);//
 
   atmTexture->generateTexture();
 

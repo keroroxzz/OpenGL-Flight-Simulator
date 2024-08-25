@@ -4,11 +4,13 @@ in vec2 TexCoord;
 in vec3 wNorm;
 out vec4 FragColor;
 
+uniform float iTime;
 uniform int windowWidth;
 uniform int windowHeight;
 uniform mat4 InvVP;
 uniform vec4 camera;
 uniform vec3 SunDirection;
+uniform sampler3D worley_noise;
 uniform sampler2D atmosphere_texture;
 
 uniform mat4 ModelViewProjectionMatrix;
@@ -36,10 +38,9 @@ float MieScattering(float c)
     return mieStrength*MiePhase(c);
 }
 
-vec3 LightDecay(vec2 density)
+vec3 LightDecay(vec3 density)
 {
-    // why do we need to clamp here?
-    return clamp(vec3(exp(-density.x/scatteringFactor - density.y*mieDecay)), 0.0, 1.0);
+    return vec3(exp(-density.x/scatteringFactor - density.y*mieDecay - (density.z*ozoneAbsorptionFactor)));
 }
 
 vec4 getVerticalVecHeight(vec3 atmpos)
@@ -76,15 +77,15 @@ vec2 sampleAtmosphere_txt_exp(vec3 atmpos, vec3 dir)
     return density+texture(atmosphere_texture, texcoord).xy;
 }
 
-vec2 sampleAtmosphere_txt_horiz(vec3 atmpos, vec3 dir)
+vec3 sampleAtmosphere_txt_horiz(vec3 atmpos, vec3 dir)
 {
-    vec2 density = vec2(0.0);
+    vec3 density = vec3(0.0);
 
     // calculate density beneath the ground
     vec3 gstart, gend;
     sphereCast(atmpos, dir, groundSphere, gstart, gend);
     if (gstart != vec3(0.0)){
-        density = length(gstart-gend)*vec2(oxygenDensitySolid, vaporDensitySolid);
+        density = length(gstart-gend)*vec3(oxygenDensitySolid, vaporDensitySolid, 0.0);
     }
 
     // sample the density above the ground from the texture
@@ -111,8 +112,7 @@ vec2 sampleAtmosphere_txt_horiz(vec3 atmpos, vec3 dir)
     texcoord.y = 0.707106781187*texcoord.y+0.5;
 
     // sample atmosphere texture
-    density += texture(atmosphere_texture, texcoord).xy;
-
+    density += texture(atmosphere_texture, texcoord).xyz;
     return density;
 }
 
@@ -183,6 +183,7 @@ vec3 AtmosphereScattering(vec3 background, vec3 camPos, vec3 ray, vec3 lightStre
 {
     vec3 intensity=vec3(0.0);
     
+    lightStrength*=smoothstep(0.3, -0.3, lightDirection.z)+0.5;
     float ang_cos = dot(ray, lightDirection);
     float mie = MieScattering(ang_cos);
     vec3 raylei = rayleighScattering(ang_cos);
@@ -195,24 +196,33 @@ vec3 AtmosphereScattering(vec3 background, vec3 camPos, vec3 ray, vec3 lightStre
 
     vec3 marchStep = (end - start)/atmosphereStep;
     vec3 marchPos = start;
-    vec2 lastViewToPoint = vec2(0.0);
-    vec2 throughShell = sampleAtmosphere(start, ray);
+    vec3 lastViewToPoint = vec3(0.0);
+    vec3 throughShell = sampleAtmosphere(start, ray);
     
     for(float i=0.0; i<atmosphereStep; i++)
     {
         marchPos+=marchStep.xyz;
-        vec2 marchPosToEnd = sampleAtmosphere(marchPos, ray);
-        vec2 viewToPoint = throughShell - marchPosToEnd;
-        vec2 pointToSun = sampleAtmosphere(marchPos-marchStep.xyz/2.0, lightDirection);
-        vec2 viewToSun = (pointToSun + viewToPoint);
+        vec3 marchPosToEnd = sampleAtmosphere(marchPos, ray);
+        vec3 viewToPoint = throughShell - marchPosToEnd;
 
-        vec2 density = (viewToPoint - lastViewToPoint);
-        intensity += LightDecay(viewToSun)*(raylei*density.x + mie*density.y);
-        intensity += 0.0000001/scatteringFactor*LightDecay(vec2(0.0, pointToSun.y));
+        vec3 samplePoint = marchPos-marchStep.xyz/2.0;
+        vec3 pointToSun = sampleAtmosphere(samplePoint, lightDirection);
+        vec3 viewToSun = (viewToPoint + pointToSun);
+        
+
+        vec3 density = (viewToPoint - lastViewToPoint);
+
+        // calculate the upper atmosphere scattering
+        vec3 upNorm = normalize(samplePoint+lightDirection*0.1);
+        vec3 pointToUpper = sampleAtmosphere(samplePoint, upNorm);
+        vec3 upperToSun = sampleAtmosphere(upNorm*(ozoneHeight+ozoneThickness)*1.06, lightDirection);
+        vec3 scatterPath = (viewToPoint + pointToUpper + upperToSun);
+
+        intensity += (LightDecay(viewToSun)+0.06*LightDecay(scatterPath))*(raylei*(density.x) + mie*density.y);
         lastViewToPoint = viewToPoint;
     }
     vec3 ret = lightStrength*intensity;
-    ret += background*LightDecay(throughShell) + 0.004/scatteringFactor*LightDecay(vec2(0.0, throughShell.y));
+    ret += background*LightDecay(throughShell);
     return ret;
 }
 
@@ -257,22 +267,47 @@ void main(void) {
         vec2 rt = sampleAtmosphere_rt(startPos, ray);
 
         // vec2 txt = sampleAtmosphere_txt_horiz(startPos, ray);
-        vec2 txt = texture(atmosphere_texture, ndc.xy).xy;
+        vec3 txt = texture(atmosphere_texture, ndc.xy).xyz;
         // vec2 v = abs(txt - rt)*100.0;
-        vec2 v = txt;
+        vec3 v = txt;
         // vec2 v = rt;
-        vec2 ramp = v*vec2(1.0,0.0);
+        vec3 ramp = v*vec3(1.0,10000.0,10.0);
         // FragColor = vec4(fract(ramp),0.0,0.0);
-        FragColor = vec4(ramp,0.0,0.0);
+        FragColor = vec4(ramp,0.0);
         return;
     } else if (ndc.x < 0.5 && ndc.y > 0.5)
     {
-        float f = 1.0;
+        float f = 0.5;
         vec3 direction = normalize(vec3(0.5,0.5,0.0)+vec3((ndc.xy-vec2(0.25, 0.75))/0.25, f)).zxy;
         vec3 sun = sunLightStrength*vec3(smoothstep(0.9999, 1.0, dot(SunDirection,direction)));
         vec3 c = AtmosphereScattering(sun, Game2Atm(vec3(0.0,0.0,1500.0)), direction, sunLightStrength, SunDirection);
         
         FragColor = vec4(c, 1.0);
+        return;
+        // rotate the camera by iTime
+        float t = iTime;
+        mat3 rot = mat3(
+            vec3(cos(t), 0.0, sin(t)),
+            vec3(0.0, 1.0, 0.0),
+            vec3(-sin(t), 0.0, cos(t))
+        );vec3 start, end, org = vec3(-3.0, 0.0, 0.0);
+        org = rot*org;
+        direction = rot*direction;
+        sphereCast(org, direction, vec4(0.0, 0.50, 0.50, 1.0), start, end);
+        if (start != vec3(0.0)) {
+            org = start;
+            for (int i=0; i<500; i++) {
+                float sdf = texture(worley_noise, org.xyz).x-0.1;
+                if (sdf<0.01)
+                    break;
+                if (length(org-start) > length(end-start)){
+                    org = vec3(-3.0, 0.0, 0.0);
+                    break;
+                }
+                org += direction*sdf;
+            }
+        }
+        FragColor = vec4(vec3(noise3d(org*30.0)), 1.0);
         return;
     }
 

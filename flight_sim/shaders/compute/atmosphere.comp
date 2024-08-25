@@ -1,7 +1,7 @@
 #version 430 core
 layout (local_size_x=1, local_size_y=1) in;
 
-layout (rg32f, binding = 1) uniform image2D output_image;
+layout (rgba32f, binding = 1) uniform image2D output_image;
 
 #include<./shaders/common/atmosphere_settings.fs>
 #include<./shaders/common/casting.fs>
@@ -9,7 +9,7 @@ layout (rg32f, binding = 1) uniform image2D output_image;
 #define M_PI 3.1415926535897932384626433832795
 
 
-float Density(vec3 pos, vec4 sphere, float strength, float solidStrength, float condense)
+float ExponentialDensity(vec3 pos, vec4 sphere, float strength, float solidStrength, float condense)
 {
     float h = length(pos-sphere.xyz)-groundHeight;
     float ep = exp(-(sphere.w-groundHeight)*condense);
@@ -22,18 +22,49 @@ float Density(vec3 pos, vec4 sphere, float strength, float solidStrength, float 
 
     return (exp(-h*condense)-ep)/(1.0-ep)*strength;
 }
+
+float BandDensity(vec3 pos, vec4 sphere, float height, float multiplier, float thickness, vec3 ray)
+{
+    vec3 start, end;
+    sphereCast(pos, ray, vec4(sphere.xyz, height+thickness), start, end);
+    vec3 gstart, gend;
+    sphereCast(pos, ray, vec4(sphere.xyz, height-thickness), gstart, gend);
+
+    if (gstart != vec3(0.0) && gstart == start){
+        return length(end-gend)*multiplier;
+    } else if (gstart != vec3(0.0) && gstart != start){ 
+        return (length(gstart-start)+length(end-gend))*multiplier;
+    } else if (gstart != vec3(0.0) && gstart != start){ 
+        return 0.0;
+    }
+}
+float BandDensity(vec3 pos, vec4 sphere, float height, float multiplier, float thickness, float index)
+{
+    float h = (length(pos-sphere.xyz)-height)/thickness;
+    if (h<-index)
+        return 0.0;
+    float v = h+index;
+    float ep = pow(v, index)* exp(-v) / (pow(index, index)*exp(-index));
+    return ep*multiplier;
+}
   
 vec3 IntegrateDensity(vec3 marchPos, vec3 marchStep, float atmosphereStep, vec4 sphere)
 {
     float step_len = length(marchStep);
     vec3 density = vec3(0.0);
     vec3 pamount = vec3(0.0);
+    
+    
+    density.z = BandDensity(
+        marchPos, sphere, ozoneHeight, ozoneDensity, ozoneThickness, normalize(marchStep));
     for(float i=0.0; i<atmosphereStep; i++)
     {
-        float oxygen = Density(
+        float oxygen = ExponentialDensity(
             marchPos, sphere, oxygenDensity, oxygenDensitySolid, oxygenCondensitivity);
-        float vapor = Density(
+        float vapor = ExponentialDensity(
             marchPos, sphere, vaporDensity, vaporDensitySolid, vaporCondensitivity);
+        // float ozone = BandDensity(
+        //     marchPos, sphere, ozoneHeight, ozoneDensity, ozoneThickness, 0.5);
         density += (pamount+vec3(oxygen, vapor, 0.0))*step_len/2.0;
         pamount = vec3(oxygen, vapor, 0.0);
         marchPos += marchStep.xyz;
