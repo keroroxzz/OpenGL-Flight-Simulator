@@ -176,45 +176,57 @@ vec2 sampleAtmosphere_rt(vec3 atmpos, vec3 dir)
 /*=======================================
     Real-time Atmosphere Sampling Method
 ========================================*/
+float mixC(float a, float b, float t)
+{
+    return mix(a, b, saturate(t));
+}
 vec2 cloudBody(vec3 pos)
 {
-    float v = 0.4-0.03*smoothstep(cloudBot, cloudTop, pos.z);
+    float v = mix(0.5, 0.36, (length(pos)-cloudBot)/(cloudTop-cloudBot));
     // v=0.4;
     float a = texture(worley_noise, pos*cloudScale1).x*0.7;
     a += texture(worley_noise, pos*cloudScale2).x*0.3;
-    float distance = (a-v)/cloudScale1;
-    float density = smoothstep(0.00, 0.08, -distance*500.0);
-    return vec2(distance, density);
+    float distance = (a-v);
+    float density = saturate(-distance*10.0);
+    return vec2(distance/cloudScale1, density);
 }
 vec2 cloudSample(vec3 pos)
 {
     vec2 body = cloudBody(pos);
     if (body.y < 0.9) {
-        float cotton = texture(worley_noise, pos*cloudScale3).x*0.5;
-        cotton += texture(worley_noise, pos*cloudScale4).x*0.5;
-        cotton = smoothstep((1.0-body.y)*0.5, (1.0-body.y), cotton);
+        float cotton = texture(worley_noise, pos*cloudScale3).x*0.3;
+        cotton += texture(worley_noise, pos*cloudScale5).x*0.5;
+        cotton += texture(worley_noise, pos*cloudScale4).x*0.2;
+        cotton = saturate((cotton-(1.0-body.y)*0.8)/((1.0-body.y)*0.2));
         body.y *= cotton;
     }
-    float v = smoothstep(cloudBot, cloudTop, pos.z);
-    // v=1.0;
+    float v = mix(0.0, 1.0, saturate((length(pos)-cloudBot)/(cloudTop-cloudBot)));
     body.y *= 50.0*v;
     return body;
 }
 float BeersLaw(float d)
 {
+    return exp(-d*beerFactor);
+}
+float SugarPowderBeersLaw(float d)
+{
     float sugarPowderEffect = 1.0-exp(-d*sugarPowderFactor)*(1.0-sugarPowderLowerBound)+sugarPowderLowerBound;
-    // sugarPowderEffect = 1.0;
-    return exp(-d*beerFactor)*sugarPowderEffect;
+    // sugarPowderEffect=0.7;
+    return BeersLaw(d)*sugarPowderEffect;
 }
 vec3 rayMarching(vec3 cloudPos, vec3 step, vec3 end) {
     vec3 start = cloudPos;
-    for(float i=0.0; i<cloudMaximumMarchCount; i++)
+    for(float i=0.0; i<cloudMaximumMarchCountPerRun; i++)
     {
         vec2 s = cloudBody(cloudPos);
         cloudPos += step*max(s.x, cloudMinimunMarchLength);
-        if (s.x<0.0)
+        // cloudPos += step*s.x;
+        if (s.x<0.0) {
+            // march back towards the cloud surface
+            cloudPos += step*s.x*0.8;
             break;
-        if (dot(cloudPos-end, step)>0.0 || (i==cloudMaximumMarchCount-1 && s.x>0.00015)){
+        }
+        if (dot(cloudPos-end, step)>0.0 || (i==cloudMaximumMarchCountPerRun-1 && s.x>0.00015)){
             cloudPos = vec3(0.0);
             break;
         }
@@ -244,8 +256,7 @@ vec3 AtmosphereScattering(vec3 background, vec3 camPos, vec3 ray, vec3 lightStre
     vec3 lastViewToPoint = vec3(0.0);
     vec3 throughShell = sampleAtmosphere(start, ray);
     
-    for(float i=0.0; i<atmosphereStep; i++)
-    {
+    for(float i=0.0; i<atmosphereStep; i++){
         marchPos+=marchStep.xyz;
         vec3 marchPosToEnd = sampleAtmosphere(marchPos, ray);
         vec3 viewToPoint = throughShell - marchPosToEnd;
@@ -286,10 +297,10 @@ vec3 AtmosphereScattering(vec3 background, vec3 camPos, vec3 ray, vec3 lightStre
     vec3 cloudStep = cloudStepNorm*cloudRayStep;
     vec3 cloudPos = cpos;
     float d_path = 0.0;
-    for(int k=0; k<5; k++) {
+    for(int k=0; k<cloudMaximumMarchRun; k++) {
 
         // if the visibility is too low, early exit
-        if (d_path > 0.0005) break;
+        if (d_path > cloudMaximumDepth) break;
 
         // march to the cloud surface
         cloudPos=rayMarching(cloudPos+cloudStep, cloudStepNorm, cend);
@@ -298,24 +309,25 @@ vec3 AtmosphereScattering(vec3 background, vec3 camPos, vec3 ray, vec3 lightStre
         // we sample the sunlight at the cloud surface to approximate the light intensity
         vec3 atmosphereDensity_sun = sampleAtmosphere(start, lightDirection);
         vec3 atmosphereDensity_view = throughShell-sampleAtmosphere(cloudPos, ray);
-        vec3 sunLight = LightDecay(atmosphereDensity_view+atmosphereDensity_sun)*cloudLight;
+        vec3 sunLight = 0.5*LightDecay(atmosphereDensity_view+atmosphereDensity_sun)*sunLightStrength;
 
         // calculate the upper atmosphere scattering
         vec3 upNorm = normalize(cloudPos+lightDirection*0.5);
         vec3 pointToUpper = sampleAtmosphere(cloudPos, upNorm);
         vec3 upperToSun = sampleAtmosphere(upNorm*(ozoneHeight+ozoneThickness)*1.08, lightDirection);
         vec3 scatterPath = (atmosphereDensity_view + pointToUpper + upperToSun);
-        vec3 atmScatter = cloudLight*25.0*LightDecay(scatterPath)*rayleighScattering(dot(lightDirection, upNorm));
+        vec3 atmScatter = sunLightStrength*7.0*LightDecay(scatterPath)*rayleighScattering(dot(lightDirection, upNorm));
 
-        if (length(cloudPos-camPos)>0.01) break;
+        // early exit if the cloud is too far to the camera
+        if (length(cloudPos-camPos)>0.015) break;
 
         // march through the cloud
-        for(float i=0.0; i<100; i++)
+        for(float i=0.0; i<cloudMaximumSampleCount; i++)
         {
             cloudPos += cloudStep;
 
             vec2 s = cloudSample(cloudPos);
-            if (s.x>0.0 && i>2) break;  // exit if we went through the cloud
+            if (s.x>0.0 && i>5) break;  // exit if we went through the cloud
 
             float d = s.y*cloudRayStep;
             // d = 0.00001;
@@ -324,19 +336,20 @@ vec3 AtmosphereScattering(vec3 background, vec3 camPos, vec3 ray, vec3 lightStre
             // march to the light source
             float d_light = 0.0;
             vec3 lightpos = cloudPos;
-            for(float j=0.0; j<10; j++)
+            for(float j=0.0; j<cloudMaximumLightSampleCount; j++)
             {
                 lightpos += lightDirection*cloudLightRayStep;
                 vec2 sample2 = cloudBody(lightpos);
                 if (sample2.x>0.0 && j >5)
                     break;
                 d_light += sample2.y*cloudLightRayStep;
-                if (d_light > 0.0005)
+                if (d_light > cloudMaximumDepth)
                     break;
             }
-            cloud += BeersLaw(d_path+d_light)*d*mie*sunLight+exp(-d_path*beerFactor)*d*atmScatter;
+            cloud += SugarPowderBeersLaw(d_path+d_light)*d*mie*sunLight+exp(-d_path*beerFactor)*d*atmScatter;
         }
     }
+    // return vec3(d_path*100.0);
     if (d_path>0.0)
         ret *= exp(-d_path*beerFactor);
     return ret+cloud;

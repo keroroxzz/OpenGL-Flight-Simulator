@@ -655,7 +655,6 @@ int main(int argc, char* argv[]) {
 
   cloudNoise = new TextureGenerator("./shaders/compute/cloudNoise.comp", 128, 128,
                                     128, GL_R16F, GL_MIRRORED_REPEAT);
-
   cloudNoise->generateTexture();
 
   atmTexture = new TextureGenerator("./shaders/compute/atmosphere.comp", 128,
