@@ -34,6 +34,28 @@ float noise3d(vec3 p) {
     return l(l(v,vr,ft.x), l(vd,vo,ft.x),ft.y);
 }
 
+float worley(vec3 p, float seed)
+{
+    vec3 pi = floor(p);
+    vec3 pf = fract(p);
+    vec3 d = vec3(8.0);
+    for (int i = -1; i <= 1; i++)
+    {
+        for (int j = -1; j <= 1; j++)
+        {
+            for (int k = -1; k <= 1; k++)
+            {
+                vec3 o = vec3(float(i), float(j), float(k));
+                vec3 r = vec3(hash(seed + dot(pi + o, vec3(127.1, 311.7, 415.9))));
+                vec3 p = o + r - pf;
+                float d1 = dot(p, p);
+                float d2 = dot(1.0 - p, 1.0 - p);
+                d = min(d, vec3(d1, d2, d1 + d2));
+            }
+        }
+    }
+    return sqrt(d.x);
+}
 float clamp(float v, float min_, float max_)
 {
     return min(max(v, min_), max_);

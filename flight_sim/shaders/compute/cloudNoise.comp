@@ -25,7 +25,7 @@ float hash(float n) {
     return fract(sin(n/1873.1873) * 1093.0);
 }
 
-float noise_p(vec3 p) {
+float noise3d(vec3 p) {
 
     vec3 fr = floor(p),
     ft = fract(p);
@@ -40,31 +40,44 @@ float noise_p(vec3 p) {
     vd = l(hash(nd), hash(nd + 1.0), ft.z),
     vo = l(hash(no), hash(no + 1.0), ft.z);
 
-    return ((v * (1.0 - ft.x) + vr * (ft.x)) * (1.0 - ft.y) + (vd * (1.0 - ft.x) + vo * ft.x) * ft.y);
+    return l(l(v,vr,ft.x), l(vd,vo,ft.x),ft.y);
 }
 
-float worley(vec3 p, float scale)
+float worley(vec3 p, float seed)
 {
-    vec3 ip = floor(p*scale);
-    vec3 fp = fract(p*scale);
-    float d = 1.0;
-    for (int i=-1; i<=1; i++)
-    for (int j=-1; j<=1; j++)
-    for (int k=-1; k<=1; k++)
+    vec3 pi = floor(p);
+    vec3 pf = fract(p);
+    vec3 d = vec3(8.0);
+    for (int i = -1; i <= 1; i++)
     {
-        vec3 tp = vec3(i,j,k) + ip + noise_p(vec3(i,j,k));
-        vec3 dp = tp - p*scale;
-        d = min(d, sqrt(dot(dp,dp)));
+        for (int j = -1; j <= 1; j++)
+        {
+            for (int k = -1; k <= 1; k++)
+            {
+                vec3 o = vec3(float(i), float(j), float(k));
+                vec3 r = vec3(hash(seed + dot(pi + o, vec3(127.1, 311.7, 415.9))));
+                vec3 p = o + r - pf;
+                float d1 = dot(p, p);
+                float d2 = dot(1.0 - p, 1.0 - p);
+                d = min(d, vec3(d1, d2, d1 + d2));
+            }
+        }
     }
-    return d;
+    return sqrt(d.x);
 }
 
 void main(void)
 {
     vec3 pos = vec3(gl_GlobalInvocationID.xyz) / vec3(gl_NumWorkGroups.xyz*gl_WorkGroupSize.xyz);
 
-    // float density = worley(pos, 10.0) + 0.5*worley(pos, 25.0) + 0.25*worley(pos, 60.0);
-    float density = worley(pos, 2.0);
+    float l = 0.0;
+    float density = worley(pos*1.0, 2.0);l+=1.0;
+    density += worley(pos*2.0, 3.0)*0.5;l+=0.5;
+    density += worley(pos*4.0, 4.0)*0.33;l+=0.33;
+    density += worley(pos*8.0, 5.0)*0.2;l+=0.2;
+    density += worley(pos*16.0, 6.0)*0.13;l+=0.13;
+    density += worley(pos*25.0, 7.0)*0.07;l+=0.07;
+    density /= l;
 
-    imageStore(output_image, ivec3(gl_GlobalInvocationID.xyz), vec4(density*0.4));
+    imageStore(output_image, ivec3(gl_GlobalInvocationID.xyz), vec4(density));
 }

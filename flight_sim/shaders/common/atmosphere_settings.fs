@@ -40,3 +40,23 @@ const float vaporDensitySolid = 0.005;
 const float vaporCondensitivity = 50.0;
 
 const float totalStep = 1024.0;
+
+const float cloudTop = 6.3725;
+const float cloudBot = 6.3716;
+const vec4 cloudTopSphere = vec4(0.0, 0.0, 0.0, cloudTop);
+const vec4 cloudBotSphere = vec4(0.0, 0.0, 0.0, cloudBot);
+
+const int cloudMaximumMarchCount = 75;
+const float cloudMinimunMarchLength = 0.000001;
+
+const float cloudLight = 300.0;
+const float cloudRayStep = 0.000005;
+const float cloudLightRayStep = 0.0001;
+const float beerFactor = 5000.0;
+const float sugarPowderFactor = 5000.0;
+const float sugarPowderLowerBound = 0.1;
+const float cloudMargin = 0.3;
+const float cloudScale1 = 300.0;
+const float cloudScale2 = 50.0;
+const float cloudScale3 = 7500.0;
+const float cloudScale4 = 15000.0;
