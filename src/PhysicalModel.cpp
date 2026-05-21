@@ -1,5 +1,6 @@
 #include "PhysicalModel.h"
 #include "Joints.h"
+#include <cmath>
 
 #define VEC_SIZE 4.0
 float dt = 0.0002;
@@ -150,8 +151,17 @@ void DynamicModel::applyForce(M3DVector3f p, M3DVector3f f)
 
 void DynamicModel::applyCFDAerodynamics(DynamicModel* target, bool visualize, M3DMatrix44f cvmatrix)
 {
-    if (!obj || obj->getNumIndices() == 0) return;
+    if (!obj) {
+        // printf("[Physics] Skip: no object\n");
+        return;
+    }
+    if (obj->getNumIndices() == 0) {
+        // printf("[Physics] Skip: no indices\n");
+        return;
+    }
     if (!target) target = this;
+
+    // printf("[Physics] Starting CFD for %p (target %p), indices=%d\n", this, target, obj->getNumIndices());
 
     int numIndices = obj->getNumIndices();
     GLushort* indices = obj->getIndices();
@@ -166,6 +176,8 @@ void DynamicModel::applyCFDAerodynamics(DynamicModel* target, bool visualize, M3
     }
 
     for (int i = 0; i < numIndices; i += 3) {
+        if (i + 2 >= numIndices) break; 
+        
         int i0 = indices[i];
         int i1 = indices[i+1];
         int i2 = indices[i+2];
@@ -186,13 +198,17 @@ void DynamicModel::applyCFDAerodynamics(DynamicModel* target, bool visualize, M3
         n[0] = (n0[0] + n1[0] + n2[0]) / 3.0f;
         n[1] = (n0[1] + n1[1] + n2[1]) / 3.0f;
         n[2] = (n0[2] + n1[2] + n2[2]) / 3.0f;
-        m3dNormalizeVector(n);
+        
+        float nmag = m3dGetMagnitude(n);
+        if (nmag < 0.0001f) continue; 
+        m3dScaleVector3(n, 1.0f / nmag);
 
         M3DVector3f e1, e2, cross;
         m3dSubtractVectors3(e1, v1, v0);
         m3dSubtractVectors3(e2, v2, v0);
         m3dCrossProduct(cross, e1, e2);
         float area = m3dGetMagnitude(cross) * 0.5f;
+        if (std::isnan(area) || area < 0.00001f) continue;
 
         M3DVector3f wnormal;
         wnormal[0] = waxis[0]*n[0] + waxis[4]*n[1] + waxis[8]*n[2];
@@ -207,7 +223,6 @@ void DynamicModel::applyCFDAerodynamics(DynamicModel* target, bool visualize, M3
 
         // Local velocity calculation (Linear + Angular component) for Damping
         M3DVector3f r_arm, v_rot, v_surf;
-        // lever arm from target's world center
         m3dSubtractVectors3(r_arm, wcenter, target->wpos);
         m3dCrossProduct(v_rot, target->angular_velocity, r_arm);
         
@@ -223,8 +238,6 @@ void DynamicModel::applyCFDAerodynamics(DynamicModel* target, bool visualize, M3
         float vdotn = m3dDotProduct(v_rel, wnormal);
         
         if (vdotn < 0) {
-            // P = 0.5 * rho * v^2 * sin(theta) -> Newtonian impact
-            // Note: vdotn is negative here, so we use its square
             float pressure = 0.5f * 1.225f * vdotn * vdotn;
             
             M3DVector3f force;
@@ -232,16 +245,19 @@ void DynamicModel::applyCFDAerodynamics(DynamicModel* target, bool visualize, M3
             force[1] = -wnormal[1] * pressure * area;
             force[2] = -wnormal[2] * pressure * area;
             
-            // Per-face force limit to prevent numerical explosions
             float mag = m3dGetMagnitude(force);
-            if (mag > 20000.0f) {
-                m3dScaleVector3(force, 20000.0f / mag);
+            if (std::isnan(mag)) {
+                // printf("[Physics] ERROR: NaN force detected!\n");
+                continue;
+            }
+            
+            if (mag > 10000.0f) {
+                m3dScaleVector3(force, 10000.0f / mag);
             }
 
             target->applyForce(wcenter, force);
 
             if (visualize && cvmatrix) {
-                // Use the exact same logarithmic scaling logic as the legacy code
                 float magnitude = m3dGetVectorLength(force);
                 if (magnitude > 0.1f)
                 {
@@ -250,7 +266,6 @@ void DynamicModel::applyCFDAerodynamics(DynamicModel* target, bool visualize, M3
                     m3dScaleVector3(f_log, log10f(magnitude) / magnitude);
 
                     glColor3f(2.0, 0.0, 0.0);
-                    // We don't need glBegin(GL_LINES) here because we already called it at the start of the method
                     glVertex3d(wcenter[0], wcenter[1], wcenter[2]);
                     glVertex3d(wcenter[0] + f_log[0], wcenter[1] + f_log[1], wcenter[2] + f_log[2]);
                 }
@@ -263,6 +278,7 @@ void DynamicModel::applyCFDAerodynamics(DynamicModel* target, bool visualize, M3
         glEnable(GL_LIGHTING);
         glPopMatrix();
     }
+    // printf("[Physics] CFD complete for %p\n", this);
 }
 
 void DynamicModel::applyTorque(M3DVector3f moment)

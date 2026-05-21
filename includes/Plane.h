@@ -4,6 +4,7 @@
 #include "PhysicalModel.h"
 #include "Joints.h"
 #include "FlowField.h"
+#include "FluidSolver.h"
 
 class F22
 {
@@ -18,6 +19,8 @@ class F22
 
 	Thruster *thruster;
     FlowField *flowField;
+    FluidSolver *fluidSolver;
+    M3DVector3f gridOrigin;
 
 public:
 	F22();

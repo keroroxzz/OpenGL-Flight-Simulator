@@ -77,6 +77,8 @@ F22::F22()
 	thrust_j = new RevoluteJoint(plane, thruster, tp, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
 
     flowField = new FlowField(1000);
+    fluidSolver = new FluidSolver(24, 16, 16);
+    m3dCopyVector3(gridOrigin, plane->wpos);
 
 	plane->updatePositionVelocity(plane);
 }
@@ -121,19 +123,24 @@ void F22::mouseControl(float x, float y)
 
 void F22::updatePhysic()
 {
+    extern float dt;
+    static int fluidUpdateCounter = 0;
+    
 	for (int i = 0; i < 1; i++)
 	{
-
-		glPushMatrix();
-		glLoadIdentity();
 		plane->updatePositionVelocity(plane);
-		glPopMatrix();
 
         // Apply CFD aerodynamics to main fuselage and all child parts, targeted at root plane
         plane->applyCFDAerodynamics(plane, false, nullptr);
         for(auto child : plane->children) {
              child->getChild()->applyCFDAerodynamics(plane, false, nullptr);
         }
+
+        // Move grid with plane
+        m3dCopyVector3(gridOrigin, plane->wpos);
+        M3DVector3f forward = {plane->waxis[0], plane->waxis[1], plane->waxis[2]};
+        m3dScaleVector3(forward, 5.0f);
+        m3dSubtractVectors3(gridOrigin, gridOrigin, forward);
 
         // Apply Thruster force explicitly
         thruster->applyEffect(plane);
@@ -144,8 +151,15 @@ void F22::updatePhysic()
 		plane->updateDynamic();
 	}
 
-    extern float dt;
-    flowField->update(dt, plane->wpos, plane->wvel, plane->waxis);
+    fluidUpdateCounter++;
+    if (fluidUpdateCounter >= 10) {
+        printf("[Plane] Starting Fluid Solver Step...\n");
+        fluidSolver->step(dt * 10.0f, plane->wvel, plane->waxis);
+        fluidUpdateCounter = 0;
+    }
+
+    printf("[Plane] Starting FlowField Update...\n");
+    flowField->update(dt, plane->wpos, plane->wvel, plane->waxis, fluidSolver, gridOrigin);
 }
 
 void F22::thrustControl(float v)

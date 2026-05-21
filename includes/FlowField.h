@@ -1,5 +1,5 @@
 #pragma once
-#include "baseHeader.h"
+#include "FluidSolver.h"
 #include <vector>
 
 struct AirParticle {
@@ -19,7 +19,9 @@ public:
         particles.reserve(maxParticles);
     }
 
-    void update(float dt, M3DVector3f planePos, M3DVector3f planeVel, M3DMatrix44f planeWaxis) {
+    void update(float dt, M3DVector3f planePos, M3DVector3f planeVel, M3DMatrix44f planeWaxis, FluidSolver* solver, M3DVector3f gridOrigin) {
+        // printf("[FlowField] Updating %zu particles...\n", particles.size());
+        
         M3DVector3f forward = {planeWaxis[0], planeWaxis[1], planeWaxis[2]};
         M3DVector3f side = {planeWaxis[4], planeWaxis[5], planeWaxis[6]};
         M3DVector3f up = {planeWaxis[8], planeWaxis[9], planeWaxis[10]};
@@ -28,24 +30,24 @@ public:
 
         // Move particles
         for (auto it = particles.begin(); it != particles.end(); ) {
-            // In world space, air is stationary. 
-            // Only move by the 'deflection' (it->vel)
-            it->pos[0] += it->vel[0] * dt;
-            it->pos[1] += it->vel[1] * dt;
-            it->pos[2] += it->vel[2] * dt;
+            // Sample velocity from fluid grid
+            M3DVector3f localFluid;
+            solver->getVelocity(localFluid, it->pos, gridOrigin, nullptr);
+            
+            // it->vel is the 'deflection' from world air
+            it->pos[0] += (localFluid[0] + it->vel[0]) * dt;
+            it->pos[1] += (localFluid[1] + it->vel[1]) * dt;
+            it->pos[2] += (localFluid[2] + it->vel[2]) * dt;
             it->life -= dt;
 
-            // Deflection: if near plane, deflect along plane's local down axis
+            // Simplified: if near plane, air is dragged along
             M3DVector3f rel;
             m3dSubtractVectors3(rel, it->pos, planePos);
             float distSq = m3dGetMagnitudeSquared(rel);
-            if (distSq < 225.0f) { // 15 units radius
-                float dist = sqrtf(distSq);
-                float effect = (1.0f - dist/15.0f) * 15.0f;
-                // Deflect in local negative UP direction
-                it->vel[0] -= up[0] * effect * dt;
-                it->vel[1] -= up[1] * effect * dt;
-                it->vel[2] -= up[2] * effect * dt;
+            if (distSq < 100.0f) {
+                it->pos[0] += planeVel[0] * dt * 0.5f;
+                it->pos[1] += planeVel[1] * dt * 0.5f;
+                it->pos[2] += planeVel[2] * dt * 0.5f;
             }
 
             if (it->life <= 0) {
@@ -57,12 +59,11 @@ public:
 
         // Spawn new particles in a box ahead of the plane
         spawnTimer += dt;
-        if (spawnTimer > 0.002f && particles.size() < maxParticles) {
+        if (spawnTimer > 0.005f && particles.size() < maxParticles) {
             spawnTimer = 0;
             AirParticle p;
             
-            // Spawn distance ahead of plane based on speed
-            float offX = 10.0f + speed * 0.1f; 
+            float offX = 15.0f; 
             float offY = ((rand() % 200) / 100.0f - 1.0f) * 15.0f;
             float offZ = ((rand() % 200) / 100.0f - 1.0f) * 5.0f;
             
@@ -72,10 +73,11 @@ public:
 
             p.vel[0] = 0; p.vel[1] = 0; p.vel[2] = 0; 
             
-            p.maxLife = 2.0f; // Longer life so they pass the plane
+            p.maxLife = 1.0f;
             p.life = p.maxLife;
             particles.push_back(p);
         }
+        // printf("[FlowField] Update complete.\n");
     }
 
     void draw(M3DMatrix44f mv, M3DVector3f planeVel) {
