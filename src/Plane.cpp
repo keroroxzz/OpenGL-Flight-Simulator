@@ -191,7 +191,7 @@ void F22::mouseControl(float x, float y)
 	thrust_j->moveAngle(y * 30.0, 0.4);
 }
 
-void F22::updatePhysic()
+void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
 {
     extern float dt;
     static int fluidUpdateCounter = 0;
@@ -199,6 +199,15 @@ void F22::updatePhysic()
 	for (int i = 0; i < 1; i++)
 	{
 		plane->updatePositionVelocity(plane);
+        
+        if (windTunnel && wind) {
+            // In Wind Tunnel mode, the plane is stationary
+            // We manually override wvel with the user-defined wind
+            m3dCopyVector3(plane->wvel, wind);
+            // We also force child components to have consistent world-velocity
+            // (Normally updatePositionVelocity handles this, but since we overrode root...)
+            // Simplification: assume air is moving at 'wind' velocity everywhere in the grid.
+        }
 
         // Get inverse world matrix for force projection
         M3DMatrix44f invWaxis;
@@ -216,13 +225,19 @@ void F22::updatePhysic()
         m3dScaleVector3(forward, 5.0f);
         m3dSubtractVectors3(gridOrigin, gridOrigin, forward);
 
-        // Apply Thruster force explicitly
-        thruster->applyEffect(plane);
+        if (!windTunnel) {
+            // Only apply thrust and gravity if we are actually flying
+            thruster->applyEffect(plane);
 
-		M3DVector3f gravity = { 0.0,0.0,-12000.0 * 9.81 };
-		plane->applyForce(gravity);
+            M3DVector3f gravity = { 0.0,0.0,-12000.0 * 9.81 };
+            plane->applyForce(gravity);
 
-		plane->updateDynamic();
+            plane->updateDynamic();
+        } else {
+            // In Wind Tunnel Mode, keep state frozen
+            plane->velocity[0] = plane->velocity[1] = plane->velocity[2] = 0.0f;
+            plane->angular_velocity[0] = plane->angular_velocity[1] = plane->angular_velocity[2] = 0.0f;
+        }
 	}
 
     fluidUpdateCounter++;

@@ -28,7 +28,7 @@ class F22
 public:
 	F22();
 
-	void updatePhysic();
+	void updatePhysic(bool windTunnel = false, M3DVector3f wind = nullptr);
 
 	void display(M3DMatrix44f cvmatrix, GLint model_view_loc=-1);
 	void visualize(M3DMatrix44f cvmatrix);

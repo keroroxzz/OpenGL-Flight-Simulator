@@ -19,6 +19,8 @@ bool showForce = true;
 bool isShowingForce = false;
 bool isShowingF22 = true;
 bool isShowingSlice = false;
+bool isWindTunnelMode = false;
+M3DVector3f windVelocity = {30.0f, 0.0f, 0.0f};
 
 bool running = false;
 float sim_time = 0.0;
@@ -55,11 +57,20 @@ float throttleFactor = 0.0;
 
 chrono::high_resolution_clock::time_point pclock = chrono::high_resolution_clock::now();
 
+void ReloadShaders(bool counting);
+
+M3DVector3f cameraFocus = { 0.0f, 0.0f, 0.0f };
+
 void UpdateCameraPose()
 {
     M3DVector3f nv, newZ;
     f22->getPosition(planePos);
     
+    // In normal flight, camera follows plane
+    if (!isWindTunnelMode) {
+        m3dCopyVector3(cameraFocus, planePos);
+    }
+
     // Safety check for NaN plane position
     if (std::isnan(planePos[0]) || std::isnan(planePos[1]) || std::isnan(planePos[2])) {
         M3DVector3f zero = {0,0,0};
@@ -86,26 +97,29 @@ void UpdateCameraPose()
 
     if(!running) return;
 
-    M3DVector3f camBack, camSpeed;
+    // Only update targetCamPos automatically in normal flight mode
+    if (!isWindTunnelMode) {
+        M3DVector3f camBack, camSpeed;
 
-    // Use current Up and Velocity to position camera
-    camSpeed[0] = planePos[0] + plane_coord[8] * 8.0f - nv[0] * 2.0f;
-    camSpeed[1] = planePos[1] + plane_coord[9] * 8.0f - nv[1] * 2.0f;
-    camSpeed[2] = planePos[2] + plane_coord[10] * 8.0f - nv[2] * 2.0f;
+        // Use current Up and Velocity to position camera
+        camSpeed[0] = planePos[0] + plane_coord[8] * 8.0f - nv[0] * 2.0f;
+        camSpeed[1] = planePos[1] + plane_coord[9] * 8.0f - nv[1] * 2.0f;
+        camSpeed[2] = planePos[2] + plane_coord[10] * 8.0f - nv[2] * 2.0f;
 
-    camBack[0] = planePos[0] + plane_coord[8] * 5.0f - plane_coord[0] * (3.0f + throttleFactor * 2.0f);
-    camBack[1] = planePos[1] + plane_coord[9] * 5.0f - plane_coord[1] * (3.0f + throttleFactor * 2.0f);
-    camBack[2] = planePos[2] + plane_coord[10] * 5.0f - plane_coord[2] * (3.0f + throttleFactor * 2.0f);
+        camBack[0] = planePos[0] + plane_coord[8] * 5.0f - plane_coord[0] * (3.0f + throttleFactor * 2.0f);
+        camBack[1] = planePos[1] + plane_coord[9] * 5.0f - plane_coord[1] * (3.0f + throttleFactor * 2.0f);
+        camBack[2] = planePos[2] + plane_coord[10] * 5.0f - plane_coord[2] * (3.0f + throttleFactor * 2.0f);
 
-    m3dScaleVector3(camBack, throttleFactor*0.9f);
-    m3dScaleVector3(camSpeed, 1.0f - throttleFactor*0.9f);
-    
-    M3DVector3f newCamPos;
-    m3dAddVectors3(newCamPos, camSpeed, camBack);
-    
-    // Final guard against universe blowup
-    if (!std::isnan(newCamPos[0])) {
-        m3dCopyVector3(targetCamPos, newCamPos);
+        m3dScaleVector3(camBack, throttleFactor*0.9f);
+        m3dScaleVector3(camSpeed, 1.0f - throttleFactor*0.9f);
+        
+        M3DVector3f newCamPos;
+        m3dAddVectors3(newCamPos, camSpeed, camBack);
+        
+        // Final guard against universe blowup
+        if (!std::isnan(newCamPos[0])) {
+            m3dCopyVector3(targetCamPos, newCamPos);
+        }
     }
 }
 
@@ -131,7 +145,7 @@ void RenderShadowDepth(M3DMatrix44f mvp, M3DMatrix44f mv)
     m3dCrossProduct(up, sun_target, zaxis);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
-    gluLookAt(planePos[0]+sun_target[0]*5.0, planePos[1]+sun_target[1]*5.0, planePos[2]+sun_target[2]*5.0, planePos[0], planePos[1], planePos[2], 0.0, 0.0, 1.0);
+    gluLookAt(cameraFocus[0]+sun_target[0]*5.0, cameraFocus[1]+sun_target[1]*5.0, cameraFocus[2]+sun_target[2]*5.0, cameraFocus[0], cameraFocus[1], cameraFocus[2], 0.0, 0.0, 1.0);
     glGetFloatv(GL_MODELVIEW_MATRIX, mv);
 
     m3dMatrixMultiply44(mvp, projection_shadow, mv);
@@ -186,7 +200,7 @@ void RenderScene(void)
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
-    gluLookAt(cameraPos[0], cameraPos[1], cameraPos[2], planePos[0], planePos[1], planePos[2], plane_coord[8], plane_coord[9], plane_coord[10]);
+    gluLookAt(cameraPos[0], cameraPos[1], cameraPos[2], cameraFocus[0], cameraFocus[1], cameraFocus[2], plane_coord[8], plane_coord[9], plane_coord[10]);
     glGetFloatv(GL_MODELVIEW_MATRIX, model_view);
 
     m3dMatrixMultiply44(model_view_proj, projection, model_view);
@@ -216,7 +230,16 @@ void RenderScene(void)
         lightingShader->setUniform("windowWidth", UNI_INT_1, &windowWidth);
         lightingShader->setUniform("windowHeight", UNI_INT_1, &windowHeight);
         lightingShader->setUniform("camera", UNI_VEC_4, cameraPos);
-        lightingShader->setUniform("SunDirection", UNI_VEC_3, sun);
+        
+        if (isWindTunnelMode) {
+            // Light comes from camera position (Spotlight feel)
+            M3DVector3f camDir;
+            m3dSubtractVectors3(camDir, cameraPos, planePos);
+            m3dNormalizeVector(camDir);
+            lightingShader->setUniform("SunDirection", UNI_VEC_3, camDir);
+        } else {
+            lightingShader->setUniform("SunDirection", UNI_VEC_3, sun);
+        }
 
         GLint model_view_loc = lightingShader->uniformLocation("ModelViewMatrix");
 
@@ -248,37 +271,39 @@ void RenderScene(void)
         glPopMatrix();
     }
 
-    skyShader->use();
-    skyShader->setUniform("windowWidth", UNI_INT_1, &windowWidth);
-    skyShader->setUniform("windowHeight", UNI_INT_1, &windowHeight);
-    skyShader->setUniform("InvVP", UNI_MATRIX_4, &inverse_model_view_proj[0]);
-    skyShader->setUniform("InvNVP", UNI_MATRIX_3, &inverse_model_view_rot[0]);
-    skyShader->setUniform("ProjectionMatrix", UNI_MATRIX_4, &projection[0]);
-    skyShader->setUniform("camera", UNI_VEC_4, cameraPos);
-    skyShader->setUniform("iTime", UNI_FLOAT_1, &sim_time);
-    skyShader->setUniform("SunDirection", UNI_VEC_3, sun);
-    GLint model_view_loc = skyShader->uniformLocation("ModelViewMatrix");
+    if (!isWindTunnelMode) {
+        skyShader->use();
+        skyShader->setUniform("windowWidth", UNI_INT_1, &windowWidth);
+        skyShader->setUniform("windowHeight", UNI_INT_1, &windowHeight);
+        skyShader->setUniform("InvVP", UNI_MATRIX_4, &inverse_model_view_proj[0]);
+        skyShader->setUniform("InvNVP", UNI_MATRIX_3, &inverse_model_view_rot[0]);
+        skyShader->setUniform("ProjectionMatrix", UNI_MATRIX_4, &projection[0]);
+        skyShader->setUniform("camera", UNI_VEC_4, cameraPos);
+        skyShader->setUniform("iTime", UNI_FLOAT_1, &sim_time);
+        skyShader->setUniform("SunDirection", UNI_VEC_3, sun);
+        GLint model_view_loc = skyShader->uniformLocation("ModelViewMatrix");
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, map_texture);
-    skyShader->setUniform("sampler0", UNI_TEXTURE, 0);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, map_texture);
+        skyShader->setUniform("sampler0", UNI_TEXTURE, 0);
 
-    glColor3f(1.0f, 1.0f, 1.0f);
+        glColor3f(1.0f, 1.0f, 1.0f);
 
-    glPushMatrix();
-    glTranslatef(10000.0, 0.0, -700.0);
-    map->draw(2, GL_TRIANGLES, model_view_loc);
-    glPopMatrix();
+        glPushMatrix();
+        glTranslatef(10000.0, 0.0, -700.0);
+        map->draw(2, GL_TRIANGLES, model_view_loc);
+        glPopMatrix();
 
-    // Draw dome
-    glColor3f(0.68f, 0.75f, 0.85f);
-    glPushMatrix();
-    glTranslatef(cameraPos[0], cameraPos[1], cameraPos[2]);
+        // Draw dome
+        glColor3f(0.68f, 0.75f, 0.85f);
+        glPushMatrix();
+        glTranslatef(cameraPos[0], cameraPos[1], cameraPos[2]);
 
-    glGetFloatv(GL_MODELVIEW_MATRIX, model_view);
-    glUniformMatrix4fv(model_view_loc, 1, GL_FALSE, &model_view[0]);
-    glutSolidSphere(14900.0f, 100, 100);
-    glPopMatrix();
+        glGetFloatv(GL_MODELVIEW_MATRIX, model_view);
+        glUniformMatrix4fv(model_view_loc, 1, GL_FALSE, &model_view[0]);
+        glutSolidSphere(14900.0f, 100, 100);
+        glPopMatrix();
+    }
 
     glUseProgram(0);
 
@@ -312,9 +337,6 @@ void prepareFBO(GLenum textureNum, GLuint *fboname, GLuint *dbname, GLuint *text
 
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, *texture, 0);
     
-    // GLenum DrawBuffers[1] = {GL_DEPTH_ATTACHMENT};
-    // glDrawBuffers(1, DrawBuffers);
-
 	//check the status of the frame buffer
 	if (glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT)
 	{
@@ -328,38 +350,72 @@ void prepareFBO(GLenum textureNum, GLuint *fboname, GLuint *dbname, GLuint *text
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
+void ProcessMenu(int value)
+{
+    M3DVector3f zero = { 0,0,0 };
+    switch (value)
+    {
+    case 1: 
+        running = !running; 
+        printf("[Menu] Simulation %s\n", running ? "STARTED" : "PAUSED");
+        break;
+    case 2: 
+        f22->setPosition(zero);
+        f22->thrustControl(0);
+        printf("[Menu] Aircraft RESET to origin.\n");
+        break;
+    case 3: 
+        isWindTunnelMode = !isWindTunnelMode;
+        if (isWindTunnelMode) {
+             f22->setPosition(zero);
+             running = true; 
+        }
+        printf("[Menu] Wind Tunnel Mode: %s\n", isWindTunnelMode ? "ENABLED (Plane static)" : "DISABLED (Free flight)");
+        break;
+
+    case 10: 
+        isShowingForce = !isShowingForce; 
+        printf("[Menu] Force Vectors: %s\n", isShowingForce ? "ON" : "OFF");
+        break;
+    case 11: 
+        isShowingF22 = !isShowingF22; 
+        printf("[Menu] Streamlines: %s\n", isShowingF22 ? "ON" : "OFF");
+        break;
+    case 12: 
+        isShowingSlice = !isShowingSlice; 
+        printf("[Menu] CFD Slice: %s\n", isShowingSlice ? "ON" : "OFF");
+        break;
+    case 13: 
+        ReloadShaders(false); 
+        printf("[Menu] Shaders reloaded.\n");
+        break;
+
+    case 20: windVelocity[0] += 10.0f; break;
+    case 21: windVelocity[0] -= 10.0f; break;
+    case 22: windVelocity[1] += 5.0f; break;
+    case 23: windVelocity[1] -= 5.0f; break;
+    case 24: windVelocity[2] += 5.0f; break;
+    case 25: windVelocity[2] -= 5.0f; break;
+    case 26: 
+        windVelocity[0] = 30.0f;
+        windVelocity[1] = 0.0f;
+        windVelocity[2] = 0.0f;
+        printf("[Menu] Wind reset to default.\n");
+        break;
+    case 100: exit(0); break;
+    }
+    if (value >= 20 && value <= 25) {
+        printf("[Wind] Current Velocity: [%.1f, %.1f, %.1f] m/s\n", windVelocity[0], windVelocity[1], windVelocity[2]);
+    }
+    glutPostRedisplay();
+}
+
 //initialization
 void SetupRC()
 {
     GLint i;
 
-    fprintf(stdout, "Simple Flight Simulator by Brian");
-    GLint w, h, c;
-    // Make sure required functionality is available!
-    if (!GL_VERSION_2_0 && (!GL_ARB_fragment_shader ||
-        !GL_ARB_shader_objects ||
-        !GL_ARB_shading_language_100))
-    {
-        fprintf(stderr, "GLSL extensions not available!\n");
-        return;
-    }
-
-    // Make sure we have multitexture and cube maps!
-    if (!GL_VERSION_1_3 && (!GL_ARB_multitexture ||
-        !GL_ARB_texture_cube_map))
-    {
-        fprintf(stderr, "Neither OpenGL 1.3 nor necessary"
-            " extensions are available!\n");
-        return;
-    }
-
-    fprintf(stdout, "Controls:\n");
-    fprintf(stdout, "\tRight-click for menu\n\n");
-    fprintf(stdout, "\tR/L arrows\t+/- rotate lights for others shaders\n\n");
-    fprintf(stdout, "\tx/X\t\tMove +/- in x direction\n");
-    fprintf(stdout, "\ty/Y\t\tMove +/- in y direction\n");
-    fprintf(stdout, "\tz/Z\t\tMove +/- in z direction\n\n");
-    fprintf(stdout, "\tq\t\tExit demo\n\n");
+    fprintf(stdout, "Simple Flight Simulator by Brian\n");
 
     // Black background
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -405,6 +461,35 @@ void SetupRC()
 	prepareFBO(GL_TEXTURE0, &fbo_shadow, &shadow_buffer, &shadow_texture, 2048, 2048, GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_FLOAT);
 
     glEnable(GL_TEXTURE_2D);
+
+    // Create Menus
+    int nSimMenu = glutCreateMenu(ProcessMenu);
+    glutAddMenuEntry("Play/Pause (F1)", 1);
+    glutAddMenuEntry("Reset Aircraft", 2);
+    glutAddMenuEntry("Toggle Wind Tunnel Mode (F6)", 3);
+
+    int nVisMenu = glutCreateMenu(ProcessMenu);
+    glutAddMenuEntry("Toggle Force Vectors (F2)", 10);
+    glutAddMenuEntry("Toggle Streamlines (F4)", 11);
+    glutAddMenuEntry("Toggle CFD Slice (F5)", 12);
+    glutAddMenuEntry("Reload Shaders (F3)", 13);
+
+    int nWindMenu = glutCreateMenu(ProcessMenu);
+    glutAddMenuEntry("Increase Speed (+10)", 20);
+    glutAddMenuEntry("Decrease Speed (-10)", 21);
+    glutAddMenuEntry("Rotate Wind Right", 22);
+    glutAddMenuEntry("Rotate Wind Left", 23);
+    glutAddMenuEntry("Rotate Wind Up", 24);
+    glutAddMenuEntry("Rotate Wind Down", 25);
+    glutAddMenuEntry("Reset to 30m/s Forward", 26);
+
+    glutCreateMenu(ProcessMenu);
+    glutAddSubMenu("Simulation", nSimMenu);
+    glutAddSubMenu("Visualization", nVisMenu);
+    glutAddSubMenu("Wind Tunnel Settings", nWindMenu);
+    glutAddMenuEntry("Exit (Q)", 100);
+
+    glutAttachMenu(GLUT_RIGHT_BUTTON);
 }
 
 void KeyPressFunc(unsigned char key, int x, int y)
@@ -414,11 +499,37 @@ void KeyPressFunc(unsigned char key, int x, int y)
     switch (key)
     {
     case 'w':
-        f22->thrustControl(1.0);
+        if (isWindTunnelMode) {
+             M3DVector3f shift = {0.5f, 0, 0};
+             f22->setDisplacement(shift);
+        } else f22->thrustControl(1.0);
         break;
     case 's':
-        f22->thrustControl(0.0);
+        if (isWindTunnelMode) {
+             M3DVector3f shift = {-0.5f, 0, 0};
+             f22->setDisplacement(shift);
+        } else f22->thrustControl(0.0);
         break;
+    case 'a':
+        if (isWindTunnelMode) {
+             M3DVector3f shift = {0, 0.5f, 0};
+             f22->setDisplacement(shift);
+        } break;
+    case 'd':
+        if (isWindTunnelMode) {
+             M3DVector3f shift = {0, -0.5f, 0};
+             f22->setDisplacement(shift);
+        } break;
+    case 'r':
+        if (isWindTunnelMode) {
+             M3DVector3f shift = {0, 0, 0.5f};
+             f22->setDisplacement(shift);
+        } break;
+    case 'f':
+        if (isWindTunnelMode) {
+             M3DVector3f shift = {0, 0, -0.5f};
+             f22->setDisplacement(shift);
+        } break;
 
     // Slice Controls
     case 'i': f22->moveSlice(0.5f); break;
@@ -428,32 +539,22 @@ void KeyPressFunc(unsigned char key, int x, int y)
     case 'u': f22->rotateSlice(5.0f, 0.0f); break;
     case 'o': f22->rotateSlice(-5.0f, 0.0f); break;
 
-    case 'q':
-        m3dCopyVector3(sunEx, sun_target);
-        m3dMatrixMultiply33(newSun, sunRot, sunEx);
-        m3dCopyVector3(sun_target, newSun);
-        m3dNormalizeVector(sun_target);
-        break;
+    // Wind Controls
+    case '[': windVelocity[0] -= 5.0f; break;
+    case ']': windVelocity[0] += 5.0f; break;
+    case ';': windVelocity[1] -= 5.0f; break;
+    case '\'': windVelocity[1] += 5.0f; break;
+    case '.': windVelocity[2] -= 5.0f; break;
+    case '/': windVelocity[2] += 5.0f; break;
 
-    case 'e':
-        m3dCopyVector3(sunEx, sun_target);
-        m3dMatrixMultiply33(newSun, sunRotR, sunEx);
-        m3dCopyVector3(sun_target, newSun);
-        m3dNormalizeVector(sun_target);
-        break;
-
-    case '1':
-        sun_target[0] = 0.0;
-        sun_target[1] = 0.0;
-        sun_target[2] = 1.0;
-        break;
+    case 'q': exit(0); break;
     }
 
     // Refresh the Window
     glutPostRedisplay();
 }
 
-void ReloadShaders(bool counting=false)
+void ReloadShaders(bool counting)
 {
     delete skyShader;
     delete lightingShader;
@@ -490,18 +591,32 @@ void SpecialKeys(int key, int x, int y)
         break;
     case GLUT_KEY_F1:
         running = !running;
+        printf("[Key] Simulation %s\n", running ? "STARTED" : "PAUSED");
         break;
     case GLUT_KEY_F2:
         isShowingForce = !isShowingForce;
+        printf("[Key] Force Vectors: %s\n", isShowingForce ? "ON" : "OFF");
         break;
     case GLUT_KEY_F3:
-        ReloadShaders();
+        ReloadShaders(false);
+        printf("[Key] Shaders reloaded.\n");
         break;
     case GLUT_KEY_F4:
         isShowingF22 = !isShowingF22;
+        printf("[Key] Streamlines: %s\n", isShowingF22 ? "ON" : "OFF");
         break;
     case GLUT_KEY_F5:
         isShowingSlice = !isShowingSlice;
+        printf("[Key] CFD Slice: %s\n", isShowingSlice ? "ON" : "OFF");
+        break;
+    case GLUT_KEY_F6:
+        isWindTunnelMode = !isWindTunnelMode;
+        if (isWindTunnelMode) {
+            M3DVector3f zero = {0,0,0};
+            f22->setPosition(zero);
+            running = true;
+        }
+        printf("[Key] Wind Tunnel Mode: %s\n", isWindTunnelMode ? "ENABLED" : "DISABLED");
         break;
     case GLUT_KEY_PAGE_UP:
         M3DVector3f d;
@@ -537,7 +652,7 @@ void idle()
     glPushMatrix();
     if (running)
         for (int i = 0; i < 100; i++)
-            f22->updatePhysic();
+            f22->updatePhysic(isWindTunnelMode, windVelocity);
     glPopMatrix();
 
     cameraPos[0] = cameraPos[0]*0.9 + targetCamPos[0]*0.1;
@@ -580,9 +695,6 @@ void mouseHover(int x_, int y_)
     pmouse[0]=x;
     pmouse[1]=y;
 
-    // x = (abs(x) < 0.1) ? 0.0 : x;
-    // y = (abs(y) < 0.1) ? 0.0 : y;
-
     f22->mouseControl(x, y);
 }
 
@@ -609,17 +721,7 @@ int main(int argc, char* argv[])
     glutInitWindowSize(windowWidth, windowHeight);
     glutCreateWindow("Fight Simulator - alpha");
 
-    skyShader = new Shader(2);
-    skyShader->addFromFile("shaders/vertex/cloudworks.vs", GL_VERTEX_SHADER);
-    skyShader->addFromFile("shaders/frag/cloudworks.fs", GL_FRAGMENT_SHADER);
-
-    lightingShader = new Shader(2);
-    lightingShader->addFromFile("shaders/vertex/lighting.vs", GL_VERTEX_SHADER);
-    lightingShader->addFromFile("shaders/frag/lighting.fs", GL_FRAGMENT_SHADER);
-
-    sliceShader = new Shader(2);
-    sliceShader->addFromFile("shaders/vertex/slice.vs", GL_VERTEX_SHADER);
-    sliceShader->addFromFile("shaders/frag/slice.fs", GL_FRAGMENT_SHADER);
+    ReloadShaders(false);
 
     glutReshapeFunc(ChangeSize);
     glutKeyboardFunc(KeyPressFunc);
