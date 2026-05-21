@@ -1,5 +1,7 @@
 #include "FluidSolver.h"
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 
 FluidSolver::FluidSolver(int nx, int ny, int nz) : NX(nx), NY(ny), NZ(nz) {
     size = NX * NY * NZ;
@@ -9,29 +11,29 @@ FluidSolver::FluidSolver(int nx, int ny, int nz) : NX(nx), NY(ny), NZ(nz) {
 }
 
 void FluidSolver::step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxis) {
-    printf("[FluidSolver] Step START dt=%f\n", dt);
+    float speed = m3dGetMagnitude(planeVel);
     
-    // 1. Advection
-    printf("[FluidSolver] Advecting U...\n");
+    // Constantly inject background wind at the front (high X)
+    for (int k = 0; k < NZ; k++) {
+        for (int j = 0; j < NY; j++) {
+            int idx = IX(NX-1, j, k); 
+            u_prev[idx] = -speed; 
+            v_prev[idx] = 0;
+            w_prev[idx] = 0;
+        }
+    }
+
     advect(1, u, u_prev, u_prev, v_prev, w_prev, dt);
-    printf("[FluidSolver] Advecting V...\n");
     advect(2, v, v_prev, u_prev, v_prev, w_prev, dt);
-    printf("[FluidSolver] Advecting W...\n");
     advect(3, w, w_prev, u_prev, v_prev, w_prev, dt);
     
-    // 2. Projection (Incompressibility)
-    printf("[FluidSolver] Projecting...\n");
     project(u, v, w, p, div);
     
-    // 3. Prepare for next frame
     u_prev = u; v_prev = v; w_prev = w;
-    printf("[FluidSolver] Step COMPLETE.\n");
 }
 
 void FluidSolver::advect(int b, std::vector<float>& d, const std::vector<float>& d0, const std::vector<float>& du, const std::vector<float>& dv, const std::vector<float>& dw, float dt) {
-    float dt0 = dt * std::max(NX, std::max(NY, NZ));
-    int nanCount = 0;
-
+    float dt0 = dt * std::max(NX, std::max(NY, NZ)) * 0.1f;
     for (int k = 1; k < NZ - 1; k++) {
         for (int j = 1; j < NY - 1; j++) {
             for (int i = 1; i < NX - 1; i++) {
@@ -41,7 +43,6 @@ void FluidSolver::advect(int b, std::vector<float>& d, const std::vector<float>&
                 float vz = dw[idx];
 
                 if (std::isnan(vx) || std::isnan(vy) || std::isnan(vz)) {
-                    nanCount++;
                     d[idx] = 0;
                     continue;
                 }
@@ -50,7 +51,6 @@ void FluidSolver::advect(int b, std::vector<float>& d, const std::vector<float>&
                 float y = j - dt0 * vy;
                 float z = k - dt0 * vz;
                 
-                // Strict clamping
                 if (x < 0.5f) x = 0.5f; if (x > NX - 1.5f) x = NX - 1.5f;
                 if (y < 0.5f) y = 0.5f; if (y > NY - 1.5f) y = NY - 1.5f;
                 if (z < 0.5f) z = 0.5f; if (z > NZ - 1.5f) z = NZ - 1.5f;
@@ -59,12 +59,6 @@ void FluidSolver::advect(int b, std::vector<float>& d, const std::vector<float>&
                 int j0 = (int)y, j1 = j0 + 1;
                 int k0 = (int)z, k1 = k0 + 1;
                 
-                // Final safety check
-                if (i1 >= NX || j1 >= NY || k1 >= NZ || i0 < 0 || j0 < 0 || k0 < 0) {
-                    d[idx] = 0;
-                    continue;
-                }
-
                 float s1 = x - i0, s0 = 1 - s1;
                 float t1 = y - j0, t0 = 1 - t1;
                 float u1 = z - k0, u0 = 1 - u1;
@@ -77,13 +71,11 @@ void FluidSolver::advect(int b, std::vector<float>& d, const std::vector<float>&
             }
         }
     }
-    if (nanCount > 0) printf("[FluidSolver] Warning: %d NaNs found in velocity field\n", nanCount);
     set_bnd(b, d);
 }
 
 void FluidSolver::project(std::vector<float>& du, std::vector<float>& dv, std::vector<float>& dw, std::vector<float>& dp, std::vector<float>& ddiv) {
     float h = 1.0f / NX;
-    // printf("[FluidSolver] Calculating divergence...\n");
     for (int k = 1; k < NZ - 1; k++) {
         for (int j = 1; j < NY - 1; j++) {
             for (int i = 1; i < NX - 1; i++) {
@@ -95,17 +87,14 @@ void FluidSolver::project(std::vector<float>& du, std::vector<float>& dv, std::v
         }
     }
     set_bnd(0, ddiv); set_bnd(0, dp);
-    
-    // printf("[FluidSolver] Solving Poisson equation...\n");
     lin_solve(0, dp, ddiv, 1, 6);
     
-    // printf("[FluidSolver] Updating velocities...\n");
     for (int k = 1; k < NZ - 1; k++) {
         for (int j = 1; j < NY - 1; j++) {
             for (int i = 1; i < NX - 1; i++) {
                 du[IX(i, j, k)] -= 0.5f * (dp[IX(i + 1, j, k)] - dp[IX(i - 1, j, k)]) / h;
-                dv[IX(i, j, k)] -= 0.5f * (dp[IX(i, j + 1, k)] - dp[IX(i, j - 1, k)]) / h;
-                dw[IX(i, j, k)] -= 0.5f * (dp[IX(i, j, k + 1)] - dp[IX(i, j, k - 1)]) / h;
+                dv[IX(i, j + 1, k)] -= 0.5f * (dp[IX(i, j + 1, k)] - dp[IX(i, j - 1, k)]) / h;
+                dw[IX(i, j, k + 1)] -= 0.5f * (dp[IX(i, j, k + 1)] - dp[IX(i, j, k - 1)]) / h;
             }
         }
     }
@@ -113,7 +102,7 @@ void FluidSolver::project(std::vector<float>& du, std::vector<float>& dv, std::v
 }
 
 void FluidSolver::lin_solve(int b, std::vector<float>& x, const std::vector<float>& x0, float a, float c) {
-    for (int n = 0; n < 4; n++) { // Reduced iterations for real-time
+    for (int n = 0; n < 4; n++) {
         for (int k = 1; k < NZ - 1; k++) {
             for (int j = 1; j < NY - 1; j++) {
                 for (int i = 1; i < NX - 1; i++) {
@@ -146,48 +135,44 @@ void FluidSolver::set_bnd(int b, std::vector<float>& x) {
             x[IX(NX - 1, j, k)] = b == 1 ? -x[IX(NX - 2, j, k)] : x[IX(NX - 2, j, k)];
         }
     }
-
-    // Edge cases (corners)
-    x[IX(0, 0, 0)] = 0.333f * (x[IX(1, 0, 0)] + x[IX(0, 1, 0)] + x[IX(0, 0, 1)]);
-    x[IX(NX-1, NY-1, NZ-1)] = 0.333f * (x[IX(NX-2, NY-1, NZ-1)] + x[IX(NX-1, NY-2, NZ-1)] + x[IX(NX-1, NY-1, NZ-2)]);
-    // ... Simplified corners, but enough to prevent random memory reads
 }
 
-void FluidSolver::addSource(M3DVector3f pos, M3DVector3f force, float dt, M3DVector3f gridOrigin, M3DMatrix44f invWaxis) {
-    // Transform world position to grid index
+void FluidSolver::addSource(M3DVector3f worldPos, M3DVector3f force, float dt, M3DVector3f gridOrigin, M3DMatrix44f invWaxis) {
     M3DVector3f localPos;
-    m3dSubtractVectors3(localPos, pos, gridOrigin);
-    // Grid spans approx -10 to 20 in X and -15 to 15 in Y/Z
+    m3dSubtractVectors3(localPos, worldPos, gridOrigin);
+    M3DVector3f localForce;
+    if (invWaxis) {
+        m3dRotateVector(localForce, force, invWaxis);
+    } else {
+        m3dCopyVector3(localForce, force);
+    }
     int i = (int)((localPos[0] + 10.0f) * (NX / 30.0f));
     int j = (int)((localPos[1] + 15.0f) * (NY / 30.0f));
     int k = (int)((localPos[2] + 15.0f) * (NZ / 30.0f));
-    
     if (i >= 1 && i < NX-1 && j >= 1 && j < NY-1 && k >= 1 && k < NZ-1) {
         int idx = IX(i, j, k);
-        u_prev[idx] += force[0] * dt;
-        v_prev[idx] += force[1] * dt;
-        w_prev[idx] += force[2] * dt;
+        u_prev[idx] -= localForce[0] * dt * 0.1f;
+        v_prev[idx] -= localForce[1] * dt * 0.1f;
+        w_prev[idx] -= localForce[2] * dt * 0.1f;
     }
 }
 
-void FluidSolver::getVelocity(M3DVector3f outVel, M3DVector3f worldPos, M3DVector3f gridOrigin, M3DMatrix44f invWaxis) {
+void FluidSolver::getVelocity(M3DVector3f outVel, M3DVector3f worldPos, M3DVector3f gridOrigin, M3DMatrix44f waxis) {
     outVel[0] = outVel[1] = outVel[2] = 0.0f;
     M3DVector3f localPos;
     m3dSubtractVectors3(localPos, worldPos, gridOrigin);
-    
-    // Scale local position to grid coordinates
-    float fi = (localPos[0] + 10.0f) * (NX / 30.0f);
-    float fj = (localPos[1] + 15.0f) * (NY / 30.0f);
-    float fk = (localPos[2] + 15.0f) * (NZ / 30.0f);
-
-    int i = (int)fi;
-    int j = (int)fj;
-    int k = (int)fk;
-    
+    int i = (int)((localPos[0] + 10.0f) * (NX / 30.0f));
+    int j = (int)((localPos[1] + 15.0f) * (NY / 30.0f));
+    int k = (int)((localPos[2] + 15.0f) * (NZ / 30.0f));
     if (i >= 0 && i < NX && j >= 0 && j < NY && k >= 0 && k < NZ) {
         int idx = IX(i, j, k);
-        outVel[0] = u[idx];
-        outVel[1] = v[idx];
-        outVel[2] = w[idx];
+        M3DVector3f localVel = { u[idx], v[idx], w[idx] };
+        if (waxis) {
+            outVel[0] = waxis[0]*localVel[0] + waxis[4]*localVel[1] + waxis[8]*localVel[2];
+            outVel[1] = waxis[1]*localVel[0] + waxis[5]*localVel[1] + waxis[9]*localVel[2];
+            outVel[2] = waxis[2]*localVel[0] + waxis[6]*localVel[1] + waxis[10]*localVel[2];
+        } else {
+            m3dCopyVector3(outVel, localVel);
+        }
     }
 }

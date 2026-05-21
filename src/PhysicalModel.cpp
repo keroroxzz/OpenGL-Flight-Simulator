@@ -1,5 +1,6 @@
 #include "PhysicalModel.h"
 #include "Joints.h"
+#include "FluidSolver.h"
 #include <cmath>
 
 #define VEC_SIZE 4.0
@@ -149,19 +150,11 @@ void DynamicModel::applyForce(M3DVector3f p, M3DVector3f f)
     m3dAddVectors3(angular_velocity, angular_velocity, delta_ang_vel_wc);
 }
 
-void DynamicModel::applyCFDAerodynamics(DynamicModel* target, bool visualize, M3DMatrix44f cvmatrix)
+void DynamicModel::applyCFDAerodynamics(DynamicModel* target, bool visualize, M3DMatrix44f cvmatrix, FluidSolver* fluid, M3DVector3f gridOrigin, M3DMatrix44f invWaxis)
 {
-    if (!obj) {
-        // printf("[Physics] Skip: no object\n");
-        return;
-    }
-    if (obj->getNumIndices() == 0) {
-        // printf("[Physics] Skip: no indices\n");
-        return;
-    }
+    if (!obj) return;
+    if (obj->getNumIndices() == 0) return;
     if (!target) target = this;
-
-    // printf("[Physics] Starting CFD for %p (target %p), indices=%d\n", this, target, obj->getNumIndices());
 
     int numIndices = obj->getNumIndices();
     GLushort* indices = obj->getIndices();
@@ -246,16 +239,19 @@ void DynamicModel::applyCFDAerodynamics(DynamicModel* target, bool visualize, M3
             force[2] = -wnormal[2] * pressure * area;
             
             float mag = m3dGetMagnitude(force);
-            if (std::isnan(mag)) {
-                // printf("[Physics] ERROR: NaN force detected!\n");
-                continue;
-            }
+            if (std::isnan(mag)) continue;
             
             if (mag > 10000.0f) {
                 m3dScaleVector3(force, 10000.0f / mag);
             }
 
             target->applyForce(wcenter, force);
+
+            // Inject turbulence into fluid grid
+            if (fluid && gridOrigin) {
+                extern float dt;
+                fluid->addSource(wcenter, force, dt, gridOrigin, invWaxis);
+            }
 
             if (visualize && cvmatrix) {
                 float magnitude = m3dGetVectorLength(force);
@@ -278,7 +274,6 @@ void DynamicModel::applyCFDAerodynamics(DynamicModel* target, bool visualize, M3
         glEnable(GL_LIGHTING);
         glPopMatrix();
     }
-    // printf("[Physics] CFD complete for %p\n", this);
 }
 
 void DynamicModel::applyTorque(M3DVector3f moment)

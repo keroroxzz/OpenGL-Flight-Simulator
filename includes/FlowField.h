@@ -32,7 +32,7 @@ public:
         for (auto it = particles.begin(); it != particles.end(); ) {
             // Sample velocity from fluid grid
             M3DVector3f localFluid;
-            solver->getVelocity(localFluid, it->pos, gridOrigin, nullptr);
+            solver->getVelocity(localFluid, it->pos, gridOrigin, planeWaxis);
             
             // it->vel is the 'deflection' from world air
             it->pos[0] += (localFluid[0] + it->vel[0]) * dt;

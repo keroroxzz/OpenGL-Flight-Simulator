@@ -97,10 +97,14 @@ void F22::visualize(M3DMatrix44f cvmatrix)
 {
 	plane->visualize(cvmatrix);
 
-    // Draw CFD forces here, as this is called OUTSIDE the lighting shader!
-    plane->applyCFDAerodynamics(plane, true, cvmatrix);
+    // Get inverse world matrix for force projection
+    M3DMatrix44f invWaxis;
+    m3dInvertMatrix44(invWaxis, plane->waxis);
+
+    // Draw CFD forces
+    plane->applyCFDAerodynamics(plane, true, cvmatrix, fluidSolver, gridOrigin, invWaxis);
     for(auto child : plane->children) {
-         child->getChild()->applyCFDAerodynamics(plane, true, cvmatrix);
+         child->getChild()->applyCFDAerodynamics(plane, true, cvmatrix, fluidSolver, gridOrigin, invWaxis);
     }
 }
 
@@ -130,10 +134,14 @@ void F22::updatePhysic()
 	{
 		plane->updatePositionVelocity(plane);
 
-        // Apply CFD aerodynamics to main fuselage and all child parts, targeted at root plane
-        plane->applyCFDAerodynamics(plane, false, nullptr);
+        // Get inverse world matrix for force projection
+        M3DMatrix44f invWaxis;
+        m3dInvertMatrix44(invWaxis, plane->waxis);
+
+        // Apply CFD aerodynamics and inject into FluidSolver
+        plane->applyCFDAerodynamics(plane, false, nullptr, fluidSolver, gridOrigin, invWaxis);
         for(auto child : plane->children) {
-             child->getChild()->applyCFDAerodynamics(plane, false, nullptr);
+             child->getChild()->applyCFDAerodynamics(plane, false, nullptr, fluidSolver, gridOrigin, invWaxis);
         }
 
         // Move grid with plane
@@ -153,12 +161,10 @@ void F22::updatePhysic()
 
     fluidUpdateCounter++;
     if (fluidUpdateCounter >= 10) {
-        printf("[Plane] Starting Fluid Solver Step...\n");
         fluidSolver->step(dt * 10.0f, plane->wvel, plane->waxis);
         fluidUpdateCounter = 0;
     }
 
-    printf("[Plane] Starting FlowField Update...\n");
     flowField->update(dt, plane->wpos, plane->wvel, plane->waxis, fluidSolver, gridOrigin);
 }
 

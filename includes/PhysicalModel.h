@@ -12,6 +12,8 @@ using namespace std;
 
 class Joint;
 
+class FluidSolver;
+
 class DynamicModel
 {
 	ObjModel *obj;
@@ -52,7 +54,7 @@ public:
 	void updateDynamic();
 	void updateChildrenDynamic();
 
-    void applyCFDAerodynamics(DynamicModel* target, bool visualize = false, M3DMatrix44f cvmatrix = nullptr);
+    void applyCFDAerodynamics(DynamicModel* target, bool visualize = false, M3DMatrix44f cvmatrix = nullptr, FluidSolver* fluid = nullptr, M3DVector3f gridOrigin = nullptr, M3DMatrix44f invWaxis = nullptr);
 
 	void updateEffect(DynamicModel* base = nullptr);
 	void updateChildrenPV(DynamicModel* base = nullptr);
