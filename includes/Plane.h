@@ -5,6 +5,7 @@
 #include "Joints.h"
 #include "FlowField.h"
 #include "FluidSolver.h"
+#include "Shader.h"
 
 class F22
 {
@@ -22,6 +23,8 @@ class F22
     FluidSolver *fluidSolver;
     M3DVector3f gridOrigin;
 
+    float sliceRoll = 0.0f, slicePitch = 90.0f, sliceDist = 5.0f;
+
 public:
 	F22();
 
@@ -30,6 +33,10 @@ public:
 	void display(M3DMatrix44f cvmatrix, GLint model_view_loc=-1);
 	void visualize(M3DMatrix44f cvmatrix);
     void drawFlowField(M3DMatrix44f cvmatrix);
+    void drawSlice(M3DMatrix44f cvmatrix, Shader* sliceShader);
+
+    void rotateSlice(float roll, float pitch);
+    void moveSlice(float forward);
 
 	void mouseControl(float x, float y);
 	void thrustControl(float v);

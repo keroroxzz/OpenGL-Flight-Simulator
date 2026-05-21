@@ -93,6 +93,72 @@ void F22::drawFlowField(M3DMatrix44f cvmatrix)
     flowField->draw(cvmatrix, plane->wvel);
 }
 
+void F22::drawSlice(M3DMatrix44f cvmatrix, Shader* sliceShader)
+{
+    if (!sliceShader) return;
+
+    // Get Fluid Texture
+    GLuint tex = fluidSolver->get3DTexture();
+
+    // Build the transformation matrix from Slice Space to Grid Space
+    M3DMatrix44f sliceMat;
+    glPushMatrix();
+    glLoadIdentity();
+    glTranslatef(sliceDist, 0, 0);
+    glRotatef(sliceRoll, 1, 0, 0);
+    glRotatef(slicePitch, 0, 1, 0);
+    glGetFloatv(GL_MODELVIEW_MATRIX, sliceMat);
+    glPopMatrix();
+
+    glPushMatrix();
+    glLoadMatrixf(cvmatrix);
+    
+    // Transform to plane local space in the world
+    glMultMatrixf(plane->waxis);
+
+    // Apply the SAME transforms as captured in sliceMat for rendering position
+    glTranslatef(sliceDist, 0, 0);
+    glRotatef(sliceRoll, 1, 0, 0);
+    glRotatef(slicePitch, 0, 1, 0);
+
+    sliceShader->use();
+    
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_3D, tex);
+    sliceShader->setUniform("fluidTex", UNI_TEXTURE, nullptr, 1, GL_FALSE, 0);
+    sliceShader->setUniform("sliceMatrix", UNI_MATRIX_4, &sliceMat[0]);
+    
+    float speed = m3dGetMagnitude(plane->wvel);
+    sliceShader->setUniform("speedScale", UNI_FLOAT_1, &speed, 1);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_LIGHTING);
+
+    // Draw a large enough quad to cover the grid
+    glBegin(GL_QUADS);
+    glVertex3f(0, -15, -15);
+    glVertex3f(0,  15, -15);
+    glVertex3f(0,  15,  15);
+    glVertex3f(0, -15,  15);
+    glEnd();
+
+    glUseProgram(0);
+    glDisable(GL_BLEND);
+    glPopMatrix();
+}
+
+void F22::rotateSlice(float roll, float pitch)
+{
+    sliceRoll += roll;
+    slicePitch += pitch;
+}
+
+void F22::moveSlice(float forward)
+{
+    sliceDist += forward;
+}
+
 void F22::visualize(M3DMatrix44f cvmatrix)
 {
 	plane->visualize(cvmatrix);

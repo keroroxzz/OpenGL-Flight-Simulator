@@ -18,6 +18,7 @@
 bool showForce = true;
 bool isShowingForce = false;
 bool isShowingF22 = true;
+bool isShowingSlice = false;
 
 bool running = false;
 float sim_time = 0.0;
@@ -30,7 +31,7 @@ M3DVector2f pmouse = {0.0,0.0};
 M3DMatrix33f sunRot, sunRotR;
 
 GLuint texture, map_texture;
-Shader* skyShader, * lightingShader;
+Shader* skyShader, * lightingShader, * sliceShader;
 
 GLint windowWidth = 1024;               // window size
 GLint windowHeight = 512;
@@ -58,30 +59,54 @@ void UpdateCameraPose()
 {
     M3DVector3f nv, newZ;
     f22->getPosition(planePos);
+    
+    // Safety check for NaN plane position
+    if (std::isnan(planePos[0]) || std::isnan(planePos[1]) || std::isnan(planePos[2])) {
+        M3DVector3f zero = {0,0,0};
+        f22->setPosition(zero);
+        return;
+    }
+
     f22->getVelocity(nv);
-    m3dNormalizeVector(nv);
+    float vMag = m3dGetMagnitude(nv);
+    if (vMag > 0.1f) {
+        m3dNormalizeVector(nv);
+    } else {
+        // Fallback for stationary plane
+        nv[0] = 1.0f; nv[1] = 0.0f; nv[2] = 0.0f;
+    }
+    
     f22->getX(&plane_coord[0]);
     f22->getZ(&newZ[0]);
 
-    m3dScaleVector3(&plane_coord[8], 0.96);
-    m3dScaleVector3(newZ, 0.04);
+    // Update local Up vector with damping
+    m3dScaleVector3(&plane_coord[8], 0.96f);
+    m3dScaleVector3(newZ, 0.04f);
     m3dAddVectors3(&plane_coord[8], &plane_coord[8], newZ);
 
     if(!running) return;
 
     M3DVector3f camBack, camSpeed;
 
-    camSpeed[0] = planePos[0] + plane_coord[8] * 8.0 - nv[0] * 2.0;
-    camSpeed[1] = planePos[1] + plane_coord[9] * 8.0 - nv[1] * 2.0;
-    camSpeed[2] = planePos[2] + plane_coord[10] * 8.0 - nv[2] * 2.0;
+    // Use current Up and Velocity to position camera
+    camSpeed[0] = planePos[0] + plane_coord[8] * 8.0f - nv[0] * 2.0f;
+    camSpeed[1] = planePos[1] + plane_coord[9] * 8.0f - nv[1] * 2.0f;
+    camSpeed[2] = planePos[2] + plane_coord[10] * 8.0f - nv[2] * 2.0f;
 
-    camBack[0] = planePos[0] + plane_coord[8] * 5.0 - plane_coord[0] * (3.0 + throttleFactor * 2.0);
-    camBack[1] = planePos[1] + plane_coord[9] * 5.0 - plane_coord[1] * (3.0 + throttleFactor * 2.0);
-    camBack[2] = planePos[2] + plane_coord[10] * 5.0 - plane_coord[2] * (3.0 + throttleFactor * 2.0);
+    camBack[0] = planePos[0] + plane_coord[8] * 5.0f - plane_coord[0] * (3.0f + throttleFactor * 2.0f);
+    camBack[1] = planePos[1] + plane_coord[9] * 5.0f - plane_coord[1] * (3.0f + throttleFactor * 2.0f);
+    camBack[2] = planePos[2] + plane_coord[10] * 5.0f - plane_coord[2] * (3.0f + throttleFactor * 2.0f);
 
-    m3dScaleVector3(camBack, throttleFactor*0.9);
-    m3dScaleVector3(camSpeed, 1.0 - throttleFactor*0.9);
-    m3dAddVectors3(targetCamPos, camSpeed, camBack);
+    m3dScaleVector3(camBack, throttleFactor*0.9f);
+    m3dScaleVector3(camSpeed, 1.0f - throttleFactor*0.9f);
+    
+    M3DVector3f newCamPos;
+    m3dAddVectors3(newCamPos, camSpeed, camBack);
+    
+    // Final guard against universe blowup
+    if (!std::isnan(newCamPos[0])) {
+        m3dCopyVector3(targetCamPos, newCamPos);
+    }
 }
 
 void RenderShadowDepth(M3DMatrix44f mvp, M3DMatrix44f mv)
@@ -211,6 +236,10 @@ void RenderScene(void)
     // Draw immediate-mode visual effects outside the shader
     if (isShowingF22) {
         f22->drawFlowField(model_view);
+    }
+
+    if (isShowingSlice) {
+        f22->drawSlice(model_view, sliceShader);
     }
 
     if (isShowingForce){
@@ -391,6 +420,14 @@ void KeyPressFunc(unsigned char key, int x, int y)
         f22->thrustControl(0.0);
         break;
 
+    // Slice Controls
+    case 'i': f22->moveSlice(0.5f); break;
+    case 'k': f22->moveSlice(-0.5f); break;
+    case 'j': f22->rotateSlice(0.0f, 5.0f); break;
+    case 'l': f22->rotateSlice(0.0f, -5.0f); break;
+    case 'u': f22->rotateSlice(5.0f, 0.0f); break;
+    case 'o': f22->rotateSlice(-5.0f, 0.0f); break;
+
     case 'q':
         m3dCopyVector3(sunEx, sun_target);
         m3dMatrixMultiply33(newSun, sunRot, sunEx);
@@ -420,6 +457,7 @@ void ReloadShaders(bool counting=false)
 {
     delete skyShader;
     delete lightingShader;
+    delete sliceShader;
 
     skyShader = new Shader(2);
     skyShader->addFromFile("shaders/vertex/cloudworks.vs", GL_VERTEX_SHADER);
@@ -428,6 +466,10 @@ void ReloadShaders(bool counting=false)
     lightingShader = new Shader(2);
     lightingShader->addFromFile("shaders/vertex/lighting.vs", GL_VERTEX_SHADER);
     lightingShader->addFromFile("shaders/frag/lighting.fs", GL_FRAGMENT_SHADER);
+
+    sliceShader = new Shader(2);
+    sliceShader->addFromFile("shaders/vertex/slice.vs", GL_VERTEX_SHADER);
+    sliceShader->addFromFile("shaders/frag/slice.fs", GL_FRAGMENT_SHADER);
 }
 
 void SpecialKeys(int key, int x, int y)
@@ -457,6 +499,9 @@ void SpecialKeys(int key, int x, int y)
         break;
     case GLUT_KEY_F4:
         isShowingF22 = !isShowingF22;
+        break;
+    case GLUT_KEY_F5:
+        isShowingSlice = !isShowingSlice;
         break;
     case GLUT_KEY_PAGE_UP:
         M3DVector3f d;
@@ -571,6 +616,10 @@ int main(int argc, char* argv[])
     lightingShader = new Shader(2);
     lightingShader->addFromFile("shaders/vertex/lighting.vs", GL_VERTEX_SHADER);
     lightingShader->addFromFile("shaders/frag/lighting.fs", GL_FRAGMENT_SHADER);
+
+    sliceShader = new Shader(2);
+    sliceShader->addFromFile("shaders/vertex/slice.vs", GL_VERTEX_SHADER);
+    sliceShader->addFromFile("shaders/frag/slice.fs", GL_FRAGMENT_SHADER);
 
     glutReshapeFunc(ChangeSize);
     glutKeyboardFunc(KeyPressFunc);

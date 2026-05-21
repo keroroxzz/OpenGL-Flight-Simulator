@@ -8,6 +8,35 @@ FluidSolver::FluidSolver(int nx, int ny, int nz) : NX(nx), NY(ny), NZ(nz) {
     u.resize(size, 0); v.resize(size, 0); w.resize(size, 0);
     u_prev.resize(size, 0); v_prev.resize(size, 0); w_prev.resize(size, 0);
     p.resize(size, 0); div.resize(size, 0);
+    textureData.resize(size * 3, 0);
+}
+
+FluidSolver::~FluidSolver() {
+    if (textureID != 0) glDeleteTextures(1, &textureID);
+}
+
+GLuint FluidSolver::get3DTexture() {
+    if (textureID == 0) {
+        glGenTextures(1, &textureID);
+        glBindTexture(GL_TEXTURE_3D, textureID);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    }
+
+    // Pack U, V, W into RGB texture data
+    for (int i = 0; i < size; i++) {
+        textureData[i * 3 + 0] = u[i];
+        textureData[i * 3 + 1] = v[i];
+        textureData[i * 3 + 2] = w[i];
+    }
+
+    glBindTexture(GL_TEXTURE_3D, textureID);
+    glTexImage3D(GL_TEXTURE_3D, 0, GL_RGB32F, NX, NY, NZ, 0, GL_RGB, GL_FLOAT, textureData.data());
+    
+    return textureID;
 }
 
 void FluidSolver::step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxis) {
