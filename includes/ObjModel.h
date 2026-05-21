@@ -92,6 +92,11 @@ public:
 	void hide();
 	void show();
 	bool isShowing();
+
+    int getNumIndices() const { return n_Ind; }
+    GLushort* getIndices() const { return pInd; }
+    GLfloat* getVertices() const { return pVerts; }
+    GLfloat* getNormals() const { return pNorm; }
 };
 
 #endif

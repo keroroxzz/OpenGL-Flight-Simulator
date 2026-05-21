@@ -76,6 +76,8 @@ F22::F22()
 	M3DVector3f tp = { -7, 0.0, 0.0 };
 	thrust_j = new RevoluteJoint(plane, thruster, tp, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
 
+    flowField = new FlowField(1000);
+
 	plane->updatePositionVelocity(plane);
 }
 
@@ -84,9 +86,20 @@ void F22::display(M3DMatrix44f cvmatrix, GLint model_view_loc)
 	plane->display(cvmatrix, model_view_loc);
 }
 
+void F22::drawFlowField(M3DMatrix44f cvmatrix)
+{
+    flowField->draw(cvmatrix, plane->wvel);
+}
+
 void F22::visualize(M3DMatrix44f cvmatrix)
 {
 	plane->visualize(cvmatrix);
+
+    // Draw CFD forces here, as this is called OUTSIDE the lighting shader!
+    plane->applyCFDAerodynamics(plane, true, cvmatrix);
+    for(auto child : plane->children) {
+         child->getChild()->applyCFDAerodynamics(plane, true, cvmatrix);
+    }
 }
 
 void F22::mouseControl(float x, float y)
@@ -116,15 +129,23 @@ void F22::updatePhysic()
 		plane->updatePositionVelocity(plane);
 		glPopMatrix();
 
-		glPushMatrix();
-		plane->updateEffect(plane);
-		glPopMatrix();
+        // Apply CFD aerodynamics to main fuselage and all child parts, targeted at root plane
+        plane->applyCFDAerodynamics(plane, false, nullptr);
+        for(auto child : plane->children) {
+             child->getChild()->applyCFDAerodynamics(plane, false, nullptr);
+        }
+
+        // Apply Thruster force explicitly
+        thruster->applyEffect(plane);
 
 		M3DVector3f gravity = { 0.0,0.0,-12000.0 * 9.81 };
 		plane->applyForce(gravity);
 
 		plane->updateDynamic();
 	}
+
+    extern float dt;
+    flowField->update(dt, plane->wpos, plane->wvel, plane->waxis);
 }
 
 void F22::thrustControl(float v)

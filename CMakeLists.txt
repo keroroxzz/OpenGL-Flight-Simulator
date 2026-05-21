@@ -37,7 +37,7 @@ include_directories(
 )
 
 add_executable(${PROJECT_NAME} ${HEADER_FILES} ${SOURCE_FILES})
-target_link_libraries(${PROJECT_NAME} ${OPENGL_LIBRARIES} ${GLUT_LIBRARY} )
+target_link_libraries(${PROJECT_NAME} ${OPENGL_LIBRARIES} ${GLUT_LIBRARIES} GLU pthread)
 set_target_properties(${PROJECT_NAME} PROPERTIES 
 	ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/flight_sim/lib"
 	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/flight_sim/lib"

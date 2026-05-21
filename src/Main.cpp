@@ -208,6 +208,11 @@ void RenderScene(void)
 
     glUseProgram(0);
     
+    // Draw immediate-mode visual effects outside the shader
+    if (isShowingF22) {
+        f22->drawFlowField(model_view);
+    }
+
     if (isShowingForce){
         glPushMatrix();
         f22->visualize(model_view);

@@ -3,6 +3,7 @@
 #include "ObjModel.h"
 #include "PhysicalModel.h"
 #include "Joints.h"
+#include "FlowField.h"
 
 class F22
 {
@@ -16,6 +17,7 @@ class F22
 	RevoluteJoint *aileronL_j, * aileronR_j, * flapL_j, * flapR_j, * rudderL_j, * rudderR_j, * elevatorR_j, * elevatorL_j, * thrust_j;
 
 	Thruster *thruster;
+    FlowField *flowField;
 
 public:
 	F22();
@@ -24,6 +26,7 @@ public:
 
 	void display(M3DMatrix44f cvmatrix, GLint model_view_loc=-1);
 	void visualize(M3DMatrix44f cvmatrix);
+    void drawFlowField(M3DMatrix44f cvmatrix);
 
 	void mouseControl(float x, float y);
 	void thrustControl(float v);

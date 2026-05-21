@@ -27,6 +27,8 @@ public:
 	void update();
 	void updateEffect(DynamicModel* base);
 
+    DynamicModel* getChild() { return child; }
+
 	virtual void display(M3DMatrix44f cvmatrix, GLint model_view_loc) = 0;
 	virtual void visualize(M3DMatrix44f cvmatrix) = 0;
 	virtual void updatePositionVelocity(DynamicModel* base) = 0;

@@ -146,37 +146,123 @@ void DynamicModel::applyForce(M3DVector3f p, M3DVector3f f)
     m3dScaleVector3(delta_ang_vel_wc, dt);
 
     m3dAddVectors3(angular_velocity, angular_velocity, delta_ang_vel_wc);
+}
 
-    // if (showForce)
-    // {
-    //     float magnitude = m3dGetVectorLength(f);
-    //     if (magnitude > 0.1)
-    //     {
-    //         M3DVector3f f_log;
-    //         m3dCopyVector3(f_log, f);
-    //         m3dScaleVector3(f_log, log10f(magnitude) / magnitude);
+void DynamicModel::applyCFDAerodynamics(DynamicModel* target, bool visualize, M3DMatrix44f cvmatrix)
+{
+    if (!obj || obj->getNumIndices() == 0) return;
+    if (!target) target = this;
 
-    //         glColor3f(2.0, 0.0, 0.0);
-    //         glBegin(GL_LINES);
-    //         glVertex3d(p[0], p[1], p[2]);
-    //         glVertex3d(p[0] + f_log[0], p[1] + f_log[1], p[2] + f_log[2]);
-    //         glEnd();
-    //     }
+    int numIndices = obj->getNumIndices();
+    GLushort* indices = obj->getIndices();
+    GLfloat* verts = obj->getVertices();
+    GLfloat* norms = obj->getNormals();
+
+    if (visualize && cvmatrix) {
+        glPushMatrix();
+        glLoadMatrixf(cvmatrix);
+        glDisable(GL_LIGHTING);
+        glBegin(GL_LINES);
+    }
+
+    for (int i = 0; i < numIndices; i += 3) {
+        int i0 = indices[i];
+        int i1 = indices[i+1];
+        int i2 = indices[i+2];
+
+        M3DVector3f v0 = {verts[i0*3], verts[i0*3+1], verts[i0*3+2]};
+        M3DVector3f v1 = {verts[i1*3], verts[i1*3+1], verts[i1*3+2]};
+        M3DVector3f v2 = {verts[i2*3], verts[i2*3+1], verts[i2*3+2]};
+
+        M3DVector3f center;
+        center[0] = (v0[0] + v1[0] + v2[0]) / 3.0f;
+        center[1] = (v0[1] + v1[1] + v2[1]) / 3.0f;
+        center[2] = (v0[2] + v1[2] + v2[2]) / 3.0f;
+
+        M3DVector3f n0 = {norms[i0*3], norms[i0*3+1], norms[i0*3+2]};
+        M3DVector3f n1 = {norms[i1*3], norms[i1*3+1], norms[i1*3+2]};
+        M3DVector3f n2 = {norms[i2*3], norms[i2*3+1], norms[i2*3+2]};
+        M3DVector3f n;
+        n[0] = (n0[0] + n1[0] + n2[0]) / 3.0f;
+        n[1] = (n0[1] + n1[1] + n2[1]) / 3.0f;
+        n[2] = (n0[2] + n1[2] + n2[2]) / 3.0f;
+        m3dNormalizeVector(n);
+
+        M3DVector3f e1, e2, cross;
+        m3dSubtractVectors3(e1, v1, v0);
+        m3dSubtractVectors3(e2, v2, v0);
+        m3dCrossProduct(cross, e1, e2);
+        float area = m3dGetMagnitude(cross) * 0.5f;
+
+        M3DVector3f wnormal;
+        wnormal[0] = waxis[0]*n[0] + waxis[4]*n[1] + waxis[8]*n[2];
+        wnormal[1] = waxis[1]*n[0] + waxis[5]*n[1] + waxis[9]*n[2];
+        wnormal[2] = waxis[2]*n[0] + waxis[6]*n[1] + waxis[10]*n[2];
+        m3dNormalizeVector(wnormal);
+
+        M3DVector3f wcenter;
+        wcenter[0] = waxis[0]*center[0] + waxis[4]*center[1] + waxis[8]*center[2] + waxis[12];
+        wcenter[1] = waxis[1]*center[0] + waxis[5]*center[1] + waxis[9]*center[2] + waxis[13];
+        wcenter[2] = waxis[2]*center[0] + waxis[6]*center[1] + waxis[10]*center[2] + waxis[14];
+
+        // Local velocity calculation (Linear + Angular component) for Damping
+        M3DVector3f r_arm, v_rot, v_surf;
+        // lever arm from target's world center
+        m3dSubtractVectors3(r_arm, wcenter, target->wpos);
+        m3dCrossProduct(v_rot, target->angular_velocity, r_arm);
         
-    //     magnitude = m3dGetVectorLength(delta_ang_vel_wc);
-    //     if (magnitude > 0.1)
-    //     {
-    //         M3DVector3f m_log;
-    //         m3dCopyVector3(m_log, delta_ang_vel_wc);
-    //         m3dScaleVector3(m_log, log10f(magnitude) / magnitude);
+        v_surf[0] = target->wvel[0] + v_rot[0];
+        v_surf[1] = target->wvel[1] + v_rot[1];
+        v_surf[2] = target->wvel[2] + v_rot[2];
 
-    //         glColor3f(0.0, 5.0, 0.0);
-    //         glBegin(GL_LINES);
-    //         glVertex3d(p[0], p[1], p[2]);
-    //         glVertex3d(p[0] + m_log[0], p[1] + m_log[1], p[2] + m_log[2]);
-    //         glEnd();
-    //     }
-    // }
+        M3DVector3f v_rel;
+        v_rel[0] = -v_surf[0];
+        v_rel[1] = -v_surf[1];
+        v_rel[2] = -v_surf[2];
+        
+        float vdotn = m3dDotProduct(v_rel, wnormal);
+        
+        if (vdotn < 0) {
+            // P = 0.5 * rho * v^2 * sin(theta) -> Newtonian impact
+            // Note: vdotn is negative here, so we use its square
+            float pressure = 0.5f * 1.225f * vdotn * vdotn;
+            
+            M3DVector3f force;
+            force[0] = -wnormal[0] * pressure * area;
+            force[1] = -wnormal[1] * pressure * area;
+            force[2] = -wnormal[2] * pressure * area;
+            
+            // Per-face force limit to prevent numerical explosions
+            float mag = m3dGetMagnitude(force);
+            if (mag > 20000.0f) {
+                m3dScaleVector3(force, 20000.0f / mag);
+            }
+
+            target->applyForce(wcenter, force);
+
+            if (visualize && cvmatrix) {
+                // Use the exact same logarithmic scaling logic as the legacy code
+                float magnitude = m3dGetVectorLength(force);
+                if (magnitude > 0.1f)
+                {
+                    M3DVector3f f_log;
+                    m3dCopyVector3(f_log, force);
+                    m3dScaleVector3(f_log, log10f(magnitude) / magnitude);
+
+                    glColor3f(2.0, 0.0, 0.0);
+                    // We don't need glBegin(GL_LINES) here because we already called it at the start of the method
+                    glVertex3d(wcenter[0], wcenter[1], wcenter[2]);
+                    glVertex3d(wcenter[0] + f_log[0], wcenter[1] + f_log[1], wcenter[2] + f_log[2]);
+                }
+            }
+        }
+    }
+
+    if (visualize && cvmatrix) {
+        glEnd();
+        glEnable(GL_LIGHTING);
+        glPopMatrix();
+    }
 }
 
 void DynamicModel::applyTorque(M3DVector3f moment)
@@ -200,8 +286,6 @@ void DynamicModel::updateDynamic()
 {
     GLdouble angv = m3dGetVectorLength(angular_velocity),
         vel = m3dGetVectorLength(velocity);
-
-    cout << "VEL:" << vel << endl;
 
     if (angv > 0.0)
     {
@@ -244,19 +328,10 @@ void DynamicModel::display(M3DMatrix44f cvmatrix, GLint model_view_loc)
 
 void DynamicModel::visualize(M3DMatrix44f cvmatrix)
 {
-    // M3DVector3f angv, vel;
-
     glPushMatrix();
-
-    //copy and normalize velocity and ang vel
-    // m3dCopyVector3(vel, wvel);
-    // m3dCopyVector3(angv, angular_velocity);
-    // m3dNormalizeVector(vel);
-    // m3dNormalizeVector(angv);
 
     glPushMatrix();
     glLoadMatrixf(cvmatrix);
-
     glTranslated(wpos[0], wpos[1], wpos[2]);
 
     //If it's the base, show angular vel
@@ -413,28 +488,63 @@ void Aerofoil::applyEffect(DynamicModel *base)
     M3DVector3f force;
     float dot, forceMag;
 
-    //calculate the drag force
+    // Relative wind in world coord is -wvel
+    // Project velocity into local coordinate system
+    float vx = m3dDotProduct(wvel, &waxis[0]); // Forward
+    float vy = m3dDotProduct(wvel, &waxis[4]); // Side
+    float vz = m3dDotProduct(wvel, &waxis[8]); // Up
+
+    float speedSq = vx*vx + vy*vy + vz*vz;
+    float speed = sqrtf(speedSq);
+
+    // Calculate AoA (angle between velocity and forward axis in the XZ plane)
+    float aoa = 0.0f;
+    if (speed > 0.1f) {
+        aoa = atan2f(-vz, vx); 
+    }
+
+    // Lift Coefficient Cl approximation
+    float cl = 0.0f;
+    if (abs(aoa) < stallAngle) {
+        cl = liftFactor * aoa;
+    } else {
+        // Post-stall drop off
+        cl = liftFactor * stallAngle * (stallAngle / abs(aoa)) * 0.5f;
+    }
+
+    // Lift Force (Perpendicular to velocity, but for simplicity here we use local 'Up')
+    forceMag = 0.5f * speedSq * AIR_DENSITY * cl * area[2];
+    m3dCopyVector3(force, &waxis[8]);
+    m3dScaleVector3(force, forceMag);
+    base->applyForce(wpos, force);
+
+    // Drag (Parasitic + Induced)
+    // Parasitic drag for each axis
     for (int i = 0; i < 3; i++)
     {
         dot = m3dDotProduct(wvel, &waxis[i*4]);
-        forceMag = 0.5 * dot * dot * AIR_DENSITY * dragCoeff[i] * area[i];
-        //forceMag = forceMag > 10000.0 ? 10000 : forceMag;
-        forceMag *= (dot > 0 ? -1.0 : 1.0) ;
+        forceMag = 0.5f * dot * dot * AIR_DENSITY * dragCoeff[i] * area[i];
+        forceMag *= (dot > 0 ? -1.0f : 1.0f);
 
         m3dCopyVector3(force, &waxis[i*4]);
         m3dScaleVector3(force, forceMag);
-        
         base->applyForce(wpos, force);
     }
 
-    //Lift
-    dot = m3dDotProduct(wvel, &waxis[0]);
-    forceMag = 0.5 * dot * dot * AIR_DENSITY * liftFactor * area[2];
+    // Induced drag (simplified: proportional to cl^2)
+    float inducedDragCoeff = 0.1f; 
+    float inducedDragMag = 0.5f * speedSq * AIR_DENSITY * (cl * cl * inducedDragCoeff) * area[2];
+    m3dCopyVector3(force, wvel);
+    if (speed > 0.1f) {
+        m3dScaleVector3(force, -inducedDragMag / speed);
+        base->applyForce(wpos, force);
+    }
+}
 
-    m3dCopyVector3(force, &waxis[8]);
-    m3dScaleVector3(force, forceMag);
-
-    base->applyForce(wpos, force);
+float Aerofoil::getAoA() {
+    float vx = m3dDotProduct(wvel, &waxis[0]);
+    float vz = m3dDotProduct(wvel, &waxis[8]);
+    return atan2f(-vz, vx);
 }
 
 float Thruster::setThrust(float target, float ratio)

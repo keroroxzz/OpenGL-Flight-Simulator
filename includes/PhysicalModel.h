@@ -52,6 +52,8 @@ public:
 	void updateDynamic();
 	void updateChildrenDynamic();
 
+    void applyCFDAerodynamics(DynamicModel* target, bool visualize = false, M3DMatrix44f cvmatrix = nullptr);
+
 	void updateEffect(DynamicModel* base = nullptr);
 	void updateChildrenPV(DynamicModel* base = nullptr);
 	void updatePositionVelocity(DynamicModel* base);
@@ -70,12 +72,15 @@ public:
 class Aerofoil :public DynamicModel
 {
 	float area[3], dragCoeff[3], liftFactor;
+    float stallAngle = 0.35f; // approx 20 degrees
+    float zeroLiftAoA = 0.0f;
 
 	Aerofoil();
 public:
 	Aerofoil(ObjModel* obj, float area_front, float area_side, float area_up, float dx, float dy, float dz, float liftfactor);
 
 	void applyEffect(DynamicModel* base);
+    float getAoA();
 };
 
 class Thruster :public DynamicModel
