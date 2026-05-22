@@ -52,7 +52,7 @@ class RevoluteJoint : public FixedJoint
 private:
 	float angle;
 	M3DVector3f raxis;
-	RevoluteJoint() :raxis{0}, angle(0) {}
+	RevoluteJoint() :angle(0), raxis{0} {}
 
 public:
 	RevoluteJoint(DynamicModel* parent, DynamicModel* child, M3DVector3f pos, float r, float p, float y, float ax, float ay, float az);

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(flight_sim)
 
-add_compile_options(-std=c++11 -g -O0)
+add_compile_options(-std=c++11 -g -O0 -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable)
 
 set(CMAKE_BINARY_DIR "${CMAKE_SOURCE_DIR}/build")
 

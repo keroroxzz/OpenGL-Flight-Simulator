@@ -7,7 +7,7 @@
 
 using namespace std;
 
-ObjModel::ObjModel(const char* path, float ox, float oy, float scale_x, float scale_y, float scale_z) : offset_x(ox), offset_y(oy), list(0), pVerts(0)
+ObjModel::ObjModel(const char* path, float ox, float oy, float scale_x, float scale_y, float scale_z) : offset_x(ox), offset_y(oy), list(0), pVerts(nullptr), pTxd(nullptr), pNorm(nullptr), pInd(nullptr)
 {
 	LoadObj(path, scale_x, scale_y, scale_z);
 	InitVBO();
@@ -15,8 +15,7 @@ ObjModel::ObjModel(const char* path, float ox, float oy, float scale_x, float sc
 
 bool ObjModel::LoadObj(const char* pPathname, float scale_x, float scale_y, float scale_z)
 {
-	delete[] pVerts, pTxd, pNorm, pInd;
-
+	delete[] pVerts; delete[] pTxd; delete[] pNorm; delete[] pInd;
 	try
 	{
 		if (!pPathname)
@@ -215,8 +214,7 @@ void ObjModel::InitVBO()
 
 ObjModel::~ObjModel()
 {
-	delete[] pVerts, pTxd, pNorm, pInd;
-}
+	delete[] pVerts; delete[] pTxd; delete[] pNorm; delete[] pInd;}
 
 void ObjModel::draw(int mode, int drawmode, GLint model_view_loc)
 {

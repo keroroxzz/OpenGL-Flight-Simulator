@@ -33,7 +33,9 @@ M3DVector2f pmouse = {0.0,0.0};
 M3DMatrix33f sunRot, sunRotR;
 
 GLuint texture, map_texture;
-Shader* skyShader, * lightingShader, * sliceShader;
+Shader* skyShader = nullptr;
+Shader* lightingShader = nullptr;
+Shader* sliceShader = nullptr;
 
 GLint windowWidth = 1024;               // window size
 GLint windowHeight = 512;
@@ -121,6 +123,47 @@ void UpdateCameraPose()
             m3dCopyVector3(targetCamPos, newCamPos);
         }
     }
+}
+
+void DrawWindArrow(M3DMatrix44f mv)
+{
+    float speed = m3dGetMagnitude(windVelocity);
+    if (speed < 0.1f) return;
+
+    glPushMatrix();
+    glLoadMatrixf(mv);
+    
+    // Position the arrow slightly in front and to the side of the focus point
+    glTranslatef(cameraFocus[0] + plane_coord[0]*10.0f, 
+                 cameraFocus[1] + plane_coord[1]*10.0f + 10.0f, 
+                 cameraFocus[2] + plane_coord[2]*10.0f);
+
+    glDisable(GL_LIGHTING);
+    glLineWidth(4.0f);
+    glColor3f(1.0f, 1.0f, 0.0f); // Bright Yellow
+
+    M3DVector3f dir;
+    m3dCopyVector3(dir, windVelocity);
+    m3dScaleVector3(dir, 1.0f / speed);
+
+    // Arrow length scales with speed
+    float length = 2.0f + speed * 0.1f;
+
+    glBegin(GL_LINES);
+    glVertex3f(0, 0, 0);
+    glVertex3f(dir[0] * length, dir[1] * length, dir[2] * length);
+    glEnd();
+
+    // Draw an arrow head
+    glPushMatrix();
+    glTranslatef(dir[0] * length, dir[1] * length, dir[2] * length);
+    
+    // Simple cone-like head using spheres/cubes or just more lines
+    glutSolidSphere(0.3f, 8, 8);
+    glPopMatrix();
+
+    glEnable(GL_LIGHTING);
+    glPopMatrix();
 }
 
 void RenderShadowDepth(M3DMatrix44f mvp, M3DMatrix44f mv)
@@ -255,7 +298,7 @@ void RenderScene(void)
     }
 
     glUseProgram(0);
-    
+
     // Draw immediate-mode visual effects outside the shader
     if (isShowingF22) {
         f22->drawFlowField(model_view);
@@ -263,6 +306,10 @@ void RenderScene(void)
 
     if (isShowingSlice) {
         f22->drawSlice(model_view, sliceShader);
+    }
+
+    if (isWindTunnelMode) {
+        DrawWindArrow(model_view);
     }
 
     if (isShowingForce){
@@ -500,35 +547,59 @@ void KeyPressFunc(unsigned char key, int x, int y)
     {
     case 'w':
         if (isWindTunnelMode) {
-             M3DVector3f shift = {0.5f, 0, 0};
-             f22->setDisplacement(shift);
+             cameraFocus[0] += plane_coord[0] * 0.5f;
+             cameraFocus[1] += plane_coord[1] * 0.5f;
+             cameraFocus[2] += plane_coord[2] * 0.5f;
+             targetCamPos[0] += plane_coord[0] * 0.5f;
+             targetCamPos[1] += plane_coord[1] * 0.5f;
+             targetCamPos[2] += plane_coord[2] * 0.5f;
         } else f22->thrustControl(1.0);
         break;
     case 's':
         if (isWindTunnelMode) {
-             M3DVector3f shift = {-0.5f, 0, 0};
-             f22->setDisplacement(shift);
+             cameraFocus[0] -= plane_coord[0] * 0.5f;
+             cameraFocus[1] -= plane_coord[1] * 0.5f;
+             cameraFocus[2] -= plane_coord[2] * 0.5f;
+             targetCamPos[0] -= plane_coord[0] * 0.5f;
+             targetCamPos[1] -= plane_coord[1] * 0.5f;
+             targetCamPos[2] -= plane_coord[2] * 0.5f;
         } else f22->thrustControl(0.0);
         break;
     case 'a':
         if (isWindTunnelMode) {
-             M3DVector3f shift = {0, 0.5f, 0};
-             f22->setDisplacement(shift);
+             cameraFocus[0] -= plane_coord[4] * 0.5f;
+             cameraFocus[1] -= plane_coord[5] * 0.5f;
+             cameraFocus[2] -= plane_coord[6] * 0.5f;
+             targetCamPos[0] -= plane_coord[4] * 0.5f;
+             targetCamPos[1] -= plane_coord[5] * 0.5f;
+             targetCamPos[2] -= plane_coord[6] * 0.5f;
         } break;
     case 'd':
         if (isWindTunnelMode) {
-             M3DVector3f shift = {0, -0.5f, 0};
-             f22->setDisplacement(shift);
+             cameraFocus[0] += plane_coord[4] * 0.5f;
+             cameraFocus[1] += plane_coord[5] * 0.5f;
+             cameraFocus[2] += plane_coord[6] * 0.5f;
+             targetCamPos[0] += plane_coord[4] * 0.5f;
+             targetCamPos[1] += plane_coord[5] * 0.5f;
+             targetCamPos[2] += plane_coord[6] * 0.5f;
         } break;
     case 'r':
         if (isWindTunnelMode) {
-             M3DVector3f shift = {0, 0, 0.5f};
-             f22->setDisplacement(shift);
+             cameraFocus[0] += plane_coord[8] * 0.5f;
+             cameraFocus[1] += plane_coord[9] * 0.5f;
+             cameraFocus[2] += plane_coord[10] * 0.5f;
+             targetCamPos[0] += plane_coord[8] * 0.5f;
+             targetCamPos[1] += plane_coord[9] * 0.5f;
+             targetCamPos[2] += plane_coord[10] * 0.5f;
         } break;
     case 'f':
         if (isWindTunnelMode) {
-             M3DVector3f shift = {0, 0, -0.5f};
-             f22->setDisplacement(shift);
+             cameraFocus[0] -= plane_coord[8] * 0.5f;
+             cameraFocus[1] -= plane_coord[9] * 0.5f;
+             cameraFocus[2] -= plane_coord[10] * 0.5f;
+             targetCamPos[0] -= plane_coord[8] * 0.5f;
+             targetCamPos[1] -= plane_coord[9] * 0.5f;
+             targetCamPos[2] -= plane_coord[10] * 0.5f;
         } break;
 
     // Slice Controls
@@ -676,13 +747,13 @@ void mousePressed(int x_, int y_)
     m3dRotateVector(d, p, inverse_model_view_rot);
     
     M3DVector3f plan_to_camera;
-    m3dSubtractVectors3(plan_to_camera, targetCamPos, planePos);
+    m3dSubtractVectors3(plan_to_camera, targetCamPos, cameraFocus);
     float radius=m3dGetMagnitude(plan_to_camera);
 
     m3dAddVectors3(plan_to_camera, plan_to_camera, d);
     m3dNormalizeVector(plan_to_camera);
     m3dScaleVector3(plan_to_camera,radius);
-    m3dAddVectors3(targetCamPos, planePos, plan_to_camera);
+    m3dAddVectors3(targetCamPos, cameraFocus, plan_to_camera);
 
     pmouse[0]=x;
     pmouse[1]=y;

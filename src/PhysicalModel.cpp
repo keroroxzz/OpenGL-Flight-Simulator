@@ -247,10 +247,16 @@ void DynamicModel::applyCFDAerodynamics(DynamicModel* target, bool visualize, M3
 
             target->applyForce(wcenter, force);
 
-            // Inject turbulence into fluid grid
+            // Inject turbulence and set solid boundary into fluid grid
             if (fluid && gridOrigin) {
                 extern float dt;
                 fluid->addSource(wcenter, force, dt, gridOrigin, invWaxis);
+                
+                // Mark solid cells using local coordinates (aligned with grid)
+                fluid->setSolidLocal(center);
+                fluid->setSolidLocal(v0);
+                fluid->setSolidLocal(v1);
+                fluid->setSolidLocal(v2);
             }
 
             if (visualize && cvmatrix) {
@@ -434,7 +440,7 @@ void DynamicModel::updateChildrenDynamic()
 void DynamicModel::updateEffect(DynamicModel* base)
 {
     if (base == nullptr)
-        base == this;
+        base = this;
 
     applyEffect(base);
 
@@ -492,7 +498,7 @@ void DynamicModel::updatePositionVelocity(DynamicModel* base)
 #define AIR_DENSITY 1.05
 
 Aerofoil::Aerofoil(ObjModel* obj, float area_front, float area_side, float area_up, float dx, float dy, float dz, float liftfactor) :
-    area{ area_front,area_side,area_up }, dragCoeff{ dx,dy,dz }, liftFactor(liftfactor), DynamicModel(obj, 0.0){}
+    DynamicModel(obj, 0.0), area{ area_front,area_side,area_up }, dragCoeff{ dx,dy,dz }, liftFactor(liftfactor) {}
 
 void Aerofoil::applyEffect(DynamicModel *base)
 {

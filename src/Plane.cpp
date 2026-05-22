@@ -77,7 +77,7 @@ F22::F22()
 	thrust_j = new RevoluteJoint(plane, thruster, tp, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
 
     flowField = new FlowField(1000);
-    fluidSolver = new FluidSolver(24, 16, 16);
+    fluidSolver = new FluidSolver(32, 24, 24);
     m3dCopyVector3(gridOrigin, plane->wpos);
 
 	plane->updatePositionVelocity(plane);
@@ -196,45 +196,37 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
     extern float dt;
     static int fluidUpdateCounter = 0;
     
+    fluidSolver->clearSolid();
+
+    M3DMatrix44f invWaxis;
+    m3dInvertMatrix44(invWaxis, plane->waxis);
+
 	for (int i = 0; i < 1; i++)
 	{
 		plane->updatePositionVelocity(plane);
         
-        if (windTunnel && wind) {
-            // In Wind Tunnel mode, the plane is stationary
-            // We manually override wvel with the user-defined wind
-            m3dCopyVector3(plane->wvel, wind);
-            // We also force child components to have consistent world-velocity
-            // (Normally updatePositionVelocity handles this, but since we overrode root...)
-            // Simplification: assume air is moving at 'wind' velocity everywhere in the grid.
-        }
+        // Use plane world center as the strict center of the grid mapping
+        m3dCopyVector3(gridOrigin, plane->wpos);
 
-        // Get inverse world matrix for force projection
-        M3DMatrix44f invWaxis;
+        // Update inverse matrix after position update
         m3dInvertMatrix44(invWaxis, plane->waxis);
 
-        // Apply CFD aerodynamics and inject into FluidSolver
+        if (windTunnel && wind) {
+            m3dCopyVector3(plane->wvel, wind);
+        }
+
+        // Apply CFD aerodynamics and inject into FluidSolver using local transformation
         plane->applyCFDAerodynamics(plane, false, nullptr, fluidSolver, gridOrigin, invWaxis);
         for(auto child : plane->children) {
              child->getChild()->applyCFDAerodynamics(plane, false, nullptr, fluidSolver, gridOrigin, invWaxis);
         }
 
-        // Move grid with plane
-        m3dCopyVector3(gridOrigin, plane->wpos);
-        M3DVector3f forward = {plane->waxis[0], plane->waxis[1], plane->waxis[2]};
-        m3dScaleVector3(forward, 5.0f);
-        m3dSubtractVectors3(gridOrigin, gridOrigin, forward);
-
         if (!windTunnel) {
-            // Only apply thrust and gravity if we are actually flying
             thruster->applyEffect(plane);
-
             M3DVector3f gravity = { 0.0,0.0,-12000.0 * 9.81 };
             plane->applyForce(gravity);
-
             plane->updateDynamic();
         } else {
-            // In Wind Tunnel Mode, keep state frozen
             plane->velocity[0] = plane->velocity[1] = plane->velocity[2] = 0.0f;
             plane->angular_velocity[0] = plane->angular_velocity[1] = plane->angular_velocity[2] = 0.0f;
         }
@@ -246,7 +238,7 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
         fluidUpdateCounter = 0;
     }
 
-    flowField->update(dt, plane->wpos, plane->wvel, plane->waxis, fluidSolver, gridOrigin);
+    flowField->update(dt, plane->wpos, plane->wvel, plane->waxis, invWaxis, fluidSolver);
 }
 
 void F22::thrustControl(float v)

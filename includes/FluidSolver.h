@@ -16,17 +16,21 @@ class FluidSolver {
 
     GLuint textureID = 0;
     std::vector<float> textureData;
+    std::vector<int> solidMask;
 
     public:
-    FluidSolver(int nx = 24, int ny = 16, int nz = 16);
+    FluidSolver(int nx = 32, int ny = 24, int nz = 24);
     ~FluidSolver();
 
     void step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxis);
-    void addSource(M3DVector3f pos, M3DVector3f force, float dt, M3DVector3f gridOrigin, M3DMatrix44f invWaxis);
+    void addSource(M3DVector3f worldPos, M3DVector3f force, float dt, M3DVector3f planePos, M3DMatrix44f invWaxis);
+    void setSolid(M3DVector3f worldPos, M3DVector3f planePos, M3DMatrix44f invWaxis);
+    void setSolidLocal(M3DVector3f localPos);
+    void clearSolid();
 
-    void getVelocity(M3DVector3f outVel, M3DVector3f worldPos, M3DVector3f gridOrigin, M3DMatrix44f waxis);
-
-    GLuint get3DTexture(); // Updates and returns the texture ID
+    void getVelocity(M3DVector3f outVel, M3DVector3f worldPos, M3DVector3f planePos, M3DMatrix44f waxis, M3DMatrix44f invWaxis);
+    bool isSolid(M3DVector3f worldPos, M3DVector3f planePos, M3DMatrix44f invWaxis);
+    bool isSolidLocal(M3DVector3f localPos);    GLuint get3DTexture(); // Updates and returns the texture ID
 
     private:
     void advect(int b, std::vector<float>& d, const std::vector<float>& d0, const std::vector<float>& du, const std::vector<float>& dv, const std::vector<float>& dw, float dt);
