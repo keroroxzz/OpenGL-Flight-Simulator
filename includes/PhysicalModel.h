@@ -60,6 +60,8 @@ public:
 	void updateChildrenPV(DynamicModel* base = nullptr);
 	void updatePositionVelocity(DynamicModel* base);
 
+    void getLocalBounds(M3DVector3f minOut, M3DVector3f maxOut, M3DMatrix44f transform);
+
 	virtual void applyEffect(DynamicModel* base) {};
 
 	void attach(Joint *joint);

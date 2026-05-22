@@ -3,11 +3,6 @@
 #include <cmath>
 #include <cstdio>
 
-// GRID BOUNDS (In aircraft local meters)
-// X: [-22, 8]  (30m total: 8m in front of center, 22m behind for wake)
-// Y: [-10, 10] (20m total: Wingspan coverage)
-// Z: [-5, 5]   (10m total: Height coverage)
-
 FluidSolver::FluidSolver(int nx, int ny, int nz) : NX(nx), NY(ny), NZ(nz) {
     size = NX * NY * NZ;
     u.resize(size, 0); v.resize(size, 0); w.resize(size, 0);
@@ -15,10 +10,19 @@ FluidSolver::FluidSolver(int nx, int ny, int nz) : NX(nx), NY(ny), NZ(nz) {
     p.resize(size, 0); div.resize(size, 0);
     textureData.resize(size * 3, 0);
     solidMask.resize(size, 0);
+
+    // Initial default bounds
+    gridMin[0] = -22.0f; gridMin[1] = -10.0f; gridMin[2] = -5.0f;
+    gridMax[0] = 8.0f; gridMax[1] = 10.0f; gridMax[2] = 5.0f;
 }
 
 FluidSolver::~FluidSolver() {
     if (textureID != 0) glDeleteTextures(1, &textureID);
+}
+
+void FluidSolver::setGridBounds(M3DVector3f min, M3DVector3f max) {
+    m3dCopyVector3(gridMin, min);
+    m3dCopyVector3(gridMax, max);
 }
 
 GLuint FluidSolver::get3DTexture() {
@@ -43,11 +47,23 @@ GLuint FluidSolver::get3DTexture() {
     
     return textureID;
 }
-
 void FluidSolver::step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxis) {
     float u_wind = -m3dDotProduct(planeVel, &planeWaxis[0]); 
     float v_wind = -m3dDotProduct(planeVel, &planeWaxis[4]);
     float w_wind = -m3dDotProduct(planeVel, &planeWaxis[8]);
+
+    // If the grid is empty, fill it with background wind for immediate results
+    static bool firstStep = true;
+    if (firstStep && (abs(u_wind) > 0.1f || abs(v_wind) > 0.1f)) {
+        for (int i = 0; i < size; i++) {
+            if (!solidMask[i]) {
+                u[i] = u_prev[i] = u_wind;
+                v[i] = v_prev[i] = v_wind;
+                w[i] = w_prev[i] = w_wind;
+            }
+        }
+        firstStep = false;
+    }
 
     // Inflow at front (high index X)
     for (int k = 0; k < NZ; k++) {
@@ -84,13 +100,16 @@ void FluidSolver::advect(int b, std::vector<float>& d, const std::vector<float>&
                 int idx = IX(i, j, k);
                 if (solidMask[idx]) { continue; }
 
-                float x = i - dt0 * du[idx];
-                float y = j - dt0 * dv[idx];
-                float z = k - dt0 * dw[idx];
+                float x = (float)i - dt0 * du[idx];
+                float y = (float)j - dt0 * dv[idx];
+                float z = (float)k - dt0 * dw[idx];
                 
-                if (x < 0.5f) x = 0.5f; if (x > NX - 1.5f) x = NX - 1.5f;
-                if (y < 0.5f) y = 0.5f; if (y > NY - 1.5f) y = NY - 1.5f;
-                if (z < 0.5f) z = 0.5f; if (z > NZ - 1.5f) z = NZ - 1.5f;
+                if (x < 0.5f) x = 0.5f; 
+                if (x > (float)NX - 1.5f) x = (float)NX - 1.5f;
+                if (y < 0.5f) y = 0.5f; 
+                if (y > (float)NY - 1.5f) y = (float)NY - 1.5f;
+                if (z < 0.5f) z = 0.5f; 
+                if (z > (float)NZ - 1.5f) z = (float)NZ - 1.5f;
                 
                 int i0 = (int)x, i1 = i0 + 1;
                 int j0 = (int)y, j1 = j0 + 1;
@@ -187,10 +206,13 @@ void FluidSolver::clearSolid() {
 }
 
 void FluidSolver::setSolidLocal(M3DVector3f localPos) {
-    // New Mapping: X:[-22, 8], Y:[-10, 10], Z:[-5, 5]
-    int i = (int)((localPos[0] + 22.0f) * (NX / 30.0f));
-    int j = (int)((localPos[1] + 10.0f) * (NY / 20.0f));
-    int k = (int)((localPos[2] + 5.0f) * (NZ / 10.0f));
+    float rangeX = gridMax[0] - gridMin[0];
+    float rangeY = gridMax[1] - gridMin[1];
+    float rangeZ = gridMax[2] - gridMin[2];
+
+    int i = (int)((localPos[0] - gridMin[0]) * (NX / rangeX));
+    int j = (int)((localPos[1] - gridMin[1]) * (NY / rangeY));
+    int k = (int)((localPos[2] - gridMin[2]) * (NZ / rangeZ));
     if (i >= 0 && i < NX && j >= 0 && j < NY && k >= 0 && k < NZ) {
         solidMask[IX(i, j, k)] = 1;
     }
@@ -211,9 +233,13 @@ void FluidSolver::setSolid(M3DVector3f worldPos, M3DVector3f planePos, M3DMatrix
 }
 
 bool FluidSolver::isSolidLocal(M3DVector3f localPos) {
-    int i = (int)((localPos[0] + 22.0f) * (NX / 30.0f));
-    int j = (int)((localPos[1] + 10.0f) * (NY / 20.0f));
-    int k = (int)((localPos[2] + 5.0f) * (NZ / 10.0f));
+    float rangeX = gridMax[0] - gridMin[0];
+    float rangeY = gridMax[1] - gridMin[1];
+    float rangeZ = gridMax[2] - gridMin[2];
+
+    int i = (int)((localPos[0] - gridMin[0]) * (NX / rangeX));
+    int j = (int)((localPos[1] - gridMin[1]) * (NY / rangeY));
+    int k = (int)((localPos[2] - gridMin[2]) * (NZ / rangeZ));
     if (i >= 0 && i < NX && j >= 0 && j < NY && k >= 0 && k < NZ) {
         return solidMask[IX(i, j, k)] != 0;
     }
@@ -253,9 +279,13 @@ void FluidSolver::addSource(M3DVector3f worldPos, M3DVector3f force, float dt, M
         m3dCopyVector3(localForce, force);
     }
 
-    int i = (int)((localPos[0] + 22.0f) * (NX / 30.0f));
-    int j = (int)((localPos[1] + 10.0f) * (NY / 20.0f));
-    int k = (int)((localPos[2] + 5.0f) * (NZ / 10.0f));
+    float rangeX = gridMax[0] - gridMin[0];
+    float rangeY = gridMax[1] - gridMin[1];
+    float rangeZ = gridMax[2] - gridMin[2];
+
+    int i = (int)((localPos[0] - gridMin[0]) * (NX / rangeX));
+    int j = (int)((localPos[1] - gridMin[1]) * (NY / rangeY));
+    int k = (int)((localPos[2] - gridMin[2]) * (NZ / rangeZ));
     
     if (i >= 1 && i < NX-1 && j >= 1 && j < NY-1 && k >= 1 && k < NZ-1) {
         int idx = IX(i, j, k);
@@ -278,9 +308,13 @@ void FluidSolver::getVelocity(M3DVector3f outVel, M3DVector3f worldPos, M3DVecto
         m3dCopyVector3(localPos, rel);
     }
     
-    int i = (int)((localPos[0] + 22.0f) * (NX / 30.0f));
-    int j = (int)((localPos[1] + 10.0f) * (NY / 20.0f));
-    int k = (int)((localPos[2] + 5.0f) * (NZ / 10.0f));
+    float rangeX = gridMax[0] - gridMin[0];
+    float rangeY = gridMax[1] - gridMin[1];
+    float rangeZ = gridMax[2] - gridMin[2];
+
+    int i = (int)((localPos[0] - gridMin[0]) * (NX / rangeX));
+    int j = (int)((localPos[1] - gridMin[1]) * (NY / rangeY));
+    int k = (int)((localPos[2] - gridMin[2]) * (NZ / rangeZ));
     
     if (i >= 0 && i < NX && j >= 0 && j < NY && k >= 0 && k < NZ) {
         int idx = IX(i, j, k);

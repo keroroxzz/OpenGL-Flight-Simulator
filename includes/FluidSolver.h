@@ -17,11 +17,17 @@ class FluidSolver {
     GLuint textureID = 0;
     std::vector<float> textureData;
     std::vector<int> solidMask;
+    M3DVector3f gridMin, gridMax;
 
     public:
     FluidSolver(int nx = 32, int ny = 24, int nz = 24);
     ~FluidSolver();
 
+    void setGridBounds(M3DVector3f min, M3DVector3f max);
+    void getGridBounds(M3DVector3f minOut, M3DVector3f maxOut) {
+        m3dCopyVector3(minOut, gridMin);
+        m3dCopyVector3(maxOut, gridMax);
+    }
     void step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxis);
     void addSource(M3DVector3f worldPos, M3DVector3f force, float dt, M3DVector3f planePos, M3DMatrix44f invWaxis);
     void setSolid(M3DVector3f worldPos, M3DVector3f planePos, M3DMatrix44f invWaxis);

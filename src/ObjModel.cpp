@@ -64,6 +64,17 @@ bool ObjModel::LoadObj(const char* pPathname, float scale_x, float scale_y, floa
 				n_ver.p[2] *= scale_z;
 
 				vertices.push_back(n_ver);
+
+                // Update bounds
+                if (vertices.size() == 1) {
+                    m3dCopyVector3(minBound, n_ver.p);
+                    m3dCopyVector3(maxBound, n_ver.p);
+                } else {
+                    for(int c=0; c<3; ++c) {
+                        if (n_ver.p[c] < minBound[c]) minBound[c] = n_ver.p[c];
+                        if (n_ver.p[c] > maxBound[c]) maxBound[c] = n_ver.p[c];
+                    }
+                }
 			}
 			else if (strncmp(str, "vt ", 3) == 0)
 			{

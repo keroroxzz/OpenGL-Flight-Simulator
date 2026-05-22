@@ -252,11 +252,28 @@ void DynamicModel::applyCFDAerodynamics(DynamicModel* target, bool visualize, M3
                 extern float dt;
                 fluid->addSource(wcenter, force, dt, gridOrigin, invWaxis);
                 
-                // Mark solid cells using local coordinates (aligned with grid)
-                fluid->setSolidLocal(center);
-                fluid->setSolidLocal(v0);
-                fluid->setSolidLocal(v1);
-                fluid->setSolidLocal(v2);
+                // Transform vertices from Part-Local to Aircraft-Local for voxelization
+                // We calculate Aircraft-Local by: invWaxis(plane) * (Part.waxis * vertex)
+                auto toLocal = [&](M3DVector3f in, M3DVector3f out) {
+                    M3DVector3f world;
+                    world[0] = waxis[0]*in[0] + waxis[4]*in[1] + waxis[8]*in[2] + waxis[12];
+                    world[1] = waxis[1]*in[0] + waxis[5]*in[1] + waxis[9]*in[2] + waxis[13];
+                    world[2] = waxis[2]*in[0] + waxis[6]*in[1] + waxis[10]*in[2] + waxis[14];
+                    
+                    M3DVector3f rel;
+                    m3dSubtractVectors3(rel, world, target->wpos);
+                    out[0] = invWaxis[0]*rel[0] + invWaxis[4]*rel[1] + invWaxis[8]*rel[2];
+                    out[1] = invWaxis[1]*rel[0] + invWaxis[5]*rel[1] + invWaxis[9]*rel[2];
+                    out[2] = invWaxis[2]*rel[0] + invWaxis[6]*rel[1] + invWaxis[10]*rel[2];
+                };
+
+                M3DVector3f lc, lv0, lv1, lv2;
+                toLocal(center, lc); toLocal(v0, lv0); toLocal(v1, lv1); toLocal(v2, lv2);
+
+                fluid->setSolidLocal(lc);
+                fluid->setSolidLocal(lv0);
+                fluid->setSolidLocal(lv1);
+                fluid->setSolidLocal(lv2);
             }
 
             if (visualize && cvmatrix) {
@@ -404,6 +421,48 @@ void DynamicModel::visualize(M3DMatrix44f cvmatrix)
     visualizeChildren(cvmatrix);
 
     glPopMatrix();
+}
+
+void DynamicModel::getLocalBounds(M3DVector3f minOut, M3DVector3f maxOut, M3DMatrix44f transform)
+{
+    if (obj) {
+        M3DVector3f objMin, objMax;
+        obj->getBounds(objMin, objMax);
+        
+        // Transform the 8 corners of the box and update min/max
+        for(int i=0; i<8; ++i) {
+            M3DVector3f corner;
+            corner[0] = (i & 1) ? objMax[0] : objMin[0];
+            corner[1] = (i & 2) ? objMax[1] : objMin[1];
+            corner[2] = (i & 4) ? objMax[2] : objMin[2];
+            
+            M3DVector3f wCorner;
+            // transform is current accumulated local matrix
+            wCorner[0] = transform[0]*corner[0] + transform[4]*corner[1] + transform[8]*corner[2] + transform[12];
+            wCorner[1] = transform[1]*corner[0] + transform[5]*corner[1] + transform[9]*corner[2] + transform[13];
+            wCorner[2] = transform[2]*corner[0] + transform[6]*corner[1] + transform[10]*corner[2] + transform[14];
+            
+            for(int c=0; c<3; ++c) {
+                if (wCorner[c] < minOut[c]) minOut[c] = wCorner[c];
+                if (wCorner[c] > maxOut[c]) maxOut[c] = wCorner[c];
+            }
+        }
+    }
+
+    for (auto i = children.begin(); i != children.end(); i++) {
+        M3DMatrix44f childTransform, local;
+        m3dLoadIdentity44(local);
+        // Translation from parent
+        M3DVector3f p;
+        (*i)->getPosition(p);
+        local[12] = p[0]; local[13] = p[1]; local[14] = p[2];
+        
+        // Rotation (simplified approximation for bounds)
+        // In a real impl we'd get the actual joint rotation matrix
+        
+        m3dMatrixMultiply44(childTransform, transform, local);
+        (*i)->getChild()->getLocalBounds(minOut, maxOut, childTransform);
+    }
 }
 
 void DynamicModel::attach(Joint *joint)

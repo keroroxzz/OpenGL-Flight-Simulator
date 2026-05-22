@@ -97,10 +97,14 @@ void F22::drawSlice(M3DMatrix44f cvmatrix, Shader* sliceShader)
 {
     if (!sliceShader) return;
 
-    // Get Fluid Texture
     GLuint tex = fluidSolver->get3DTexture();
 
-    // Build the transformation matrix from Slice Space to Grid Space
+    glPushMatrix();
+    glLoadMatrixf(cvmatrix);
+    glMultMatrixf(plane->waxis);
+
+    sliceShader->use();
+    
     M3DMatrix44f sliceMat;
     glPushMatrix();
     glLoadIdentity();
@@ -110,37 +114,33 @@ void F22::drawSlice(M3DMatrix44f cvmatrix, Shader* sliceShader)
     glGetFloatv(GL_MODELVIEW_MATRIX, sliceMat);
     glPopMatrix();
 
-    glPushMatrix();
-    glLoadMatrixf(cvmatrix);
+    sliceShader->setUniform("sliceMatrix", UNI_MATRIX_4, &sliceMat[0]);
     
-    // Transform to plane local space in the world
-    glMultMatrixf(plane->waxis);
+    M3DVector3f gMin, gMax;
+    fluidSolver->getGridBounds(gMin, gMax);
+    sliceShader->setUniform("gridMin", UNI_VEC_3, gMin);
+    sliceShader->setUniform("gridMax", UNI_VEC_3, gMax);
+    
+    float speed = m3dGetMagnitude(plane->wvel);
+    sliceShader->setUniform("speedScale", UNI_FLOAT_1, &speed, 1);
 
-    // Apply the SAME transforms as captured in sliceMat for rendering position
     glTranslatef(sliceDist, 0, 0);
     glRotatef(sliceRoll, 1, 0, 0);
     glRotatef(slicePitch, 0, 1, 0);
 
-    sliceShader->use();
-    
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_3D, tex);
     sliceShader->setUniform("fluidTex", UNI_TEXTURE, nullptr, 1, GL_FALSE, 0);
-    sliceShader->setUniform("sliceMatrix", UNI_MATRIX_4, &sliceMat[0]);
-    
-    float speed = m3dGetMagnitude(plane->wvel);
-    sliceShader->setUniform("speedScale", UNI_FLOAT_1, &speed, 1);
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDisable(GL_LIGHTING);
 
-    // Draw a large enough quad to cover the grid
     glBegin(GL_QUADS);
-    glVertex3f(0, -15, -15);
-    glVertex3f(0,  15, -15);
-    glVertex3f(0,  15,  15);
-    glVertex3f(0, -15,  15);
+    glVertex3f(0, -30, -30);
+    glVertex3f(0,  30, -30);
+    glVertex3f(0,  30,  30);
+    glVertex3f(0, -30,  30);
     glEnd();
 
     glUseProgram(0);
@@ -162,12 +162,9 @@ void F22::moveSlice(float forward)
 void F22::visualize(M3DMatrix44f cvmatrix)
 {
 	plane->visualize(cvmatrix);
-
-    // Get inverse world matrix for force projection
     M3DMatrix44f invWaxis;
     m3dInvertMatrix44(invWaxis, plane->waxis);
 
-    // Draw CFD forces
     plane->applyCFDAerodynamics(plane, true, cvmatrix, fluidSolver, gridOrigin, invWaxis);
     for(auto child : plane->children) {
          child->getChild()->applyCFDAerodynamics(plane, true, cvmatrix, fluidSolver, gridOrigin, invWaxis);
@@ -178,16 +175,10 @@ void F22::mouseControl(float x, float y)
 {
 	elevatorL_j->moveAngle(x * 30.0 + y * 30.0, 0.4);
 	elevatorR_j->moveAngle(-x * 30.0 + y * 30.0, 0.4);
-	
 	aileronL_j->moveAngle(-x * 45.0, 0.5);
 	aileronR_j->moveAngle(x * 45.0, 0.5);
-
 	flapL_j->moveAngle(-x * 30.0 + y * 30.0 , 0.3);
 	flapR_j->moveAngle(x * 30.0 + y * 30.0, 0.3);
-
-	// rudderR_j->moveAngle(x * 40.0, 0.5);
-	// rudderL_j->moveAngle(x * 40.0, 0.5);
-
 	thrust_j->moveAngle(y * 30.0, 0.4);
 }
 
@@ -198,24 +189,31 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
     
     fluidSolver->clearSolid();
 
+    M3DVector3f bboxMin = { 1e10f, 1e10f, 1e10f };
+    M3DVector3f bboxMax = { -1e10f, -1e10f, -1e10f };
+    M3DMatrix44f identity;
+    m3dLoadIdentity44(identity);
+    plane->getLocalBounds(bboxMin, bboxMax, identity);
+
+    bboxMin[0] -= 15.0f; bboxMax[0] += 5.0f;
+    bboxMin[1] -= 4.0f; bboxMax[1] += 4.0f;
+    bboxMin[2] -= 4.0f; bboxMax[2] += 4.0f;
+
+    fluidSolver->setGridBounds(bboxMin, bboxMax);
+    m3dCopyVector3(gridOrigin, plane->wpos);
+
     M3DMatrix44f invWaxis;
     m3dInvertMatrix44(invWaxis, plane->waxis);
 
 	for (int i = 0; i < 1; i++)
 	{
 		plane->updatePositionVelocity(plane);
-        
-        // Use plane world center as the strict center of the grid mapping
-        m3dCopyVector3(gridOrigin, plane->wpos);
-
-        // Update inverse matrix after position update
         m3dInvertMatrix44(invWaxis, plane->waxis);
 
         if (windTunnel && wind) {
             m3dCopyVector3(plane->wvel, wind);
         }
 
-        // Apply CFD aerodynamics and inject into FluidSolver using local transformation
         plane->applyCFDAerodynamics(plane, false, nullptr, fluidSolver, gridOrigin, invWaxis);
         for(auto child : plane->children) {
              child->getChild()->applyCFDAerodynamics(plane, false, nullptr, fluidSolver, gridOrigin, invWaxis);
@@ -237,14 +235,12 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
         fluidSolver->step(dt * 10.0f, plane->wvel, plane->waxis);
         fluidUpdateCounter = 0;
     }
-
     flowField->update(dt, plane->wpos, plane->wvel, plane->waxis, invWaxis, fluidSolver);
 }
 
 void F22::thrustControl(float v)
 {
 	float t = thruster->getMaxThrust()*v;
-
 	throttle = thruster->setThrust(t, 0.3);
 }
 
@@ -261,22 +257,7 @@ void F22::setDisplacement(M3DVector3f displacement)
 	setPosition(pos);
 }
 
-void F22::getPosition(M3DVector3f pos)
-{
-	m3dCopyVector3(pos, plane->position);
-}
-
-void F22::getVelocity(M3DVector3f v)
-{
-	m3dCopyVector3(v, plane->velocity);
-}
-
-void F22::getX(M3DVector3f x)
-{
-	m3dCopyVector3(x, &plane->axis[0]);
-}
-
-void F22::getZ(M3DVector3f z)
-{
-	m3dCopyVector3(z, &plane->axis[8]);
-}
+void F22::getPosition(M3DVector3f pos) { m3dCopyVector3(pos, plane->position); }
+void F22::getVelocity(M3DVector3f v) { m3dCopyVector3(v, plane->velocity); }
+void F22::getX(M3DVector3f x) { m3dCopyVector3(x, &plane->axis[0]); }
+void F22::getZ(M3DVector3f z) { m3dCopyVector3(z, &plane->axis[8]); }

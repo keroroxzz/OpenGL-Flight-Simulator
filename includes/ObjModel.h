@@ -97,6 +97,12 @@ public:
     GLushort* getIndices() const { return pInd; }
     GLfloat* getVertices() const { return pVerts; }
     GLfloat* getNormals() const { return pNorm; }
+
+    M3DVector3f minBound, maxBound;
+    void getBounds(M3DVector3f minOut, M3DVector3f maxOut) {
+        m3dCopyVector3(minOut, minBound);
+        m3dCopyVector3(maxOut, maxBound);
+    }
 };
 
 #endif
