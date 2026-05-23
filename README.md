@@ -1,55 +1,58 @@
 ![.](https://live.staticflickr.com/65535/53265252304_3be65ecef1_c_d.jpg)
 # OpenGL Flight Simulator
 
-This is a hand-crafted flight simulator with simple air dynamic approximation and physic simulation. It's a project I made for the computer graphics class. I also port the cloudwork shader to this project to provide greate visual effects.
+It's a C++ & OpenGL-based ambitious project to utilize real-time aerodynamic simulation and realistic volumetric cloud simulation. 
 
-# Compile
+![.](https://live.staticflickr.com/65535/53265252304_3be65ecef1_c_d.jpg)
 
-Install OpenGL dependencies
+## 🚀 Key Features
 
-    sudo apt-get install build-essential libgl1-mesa-devlibglu1-mesa-dev 
-    sudo apt-get install freeglut3-dev libglew1.8 libglew-dev libgl1-mesa-glx
+1.  **Multiscale Hybrid Aerodynamics**: A high-fidelity physics engine combining Eulerian LBM (Local Grid) and Lagrangian Vortex Particles (Global Wake).
+2.  **GPU-Driven Pipeline**: Collision, streaming, and force calculations are fully offloaded to Compute Shaders.
+3.  **Real-time Voxelization**: Dynamic 3D model voxelization on the GPU for precise fluid-structure interaction (FSI).
+4.  **Realistic Volumetric Clouds**: Immersive weather simulation and daytime lighting.
+5.  **Robust Physics**: Integrated NaN-safety mechanisms and automatic fluid field stabilization.
 
-Compile the project
+## 🛠 Compilation & Execution
 
-    cmake . && make
+### Dependencies
+Install OpenGL and development libraries:
+```bash
+sudo apt-get install build-essential libgl1-mesa-dev libglu1-mesa-dev freeglut3-dev libglew-dev
+```
 
-Excute
+### Build
+```bash
+cmake . && make -j4
+```
 
-    cd flight_sim   
-    ./flight_sim
+### Run
+*   **Main Simulator**: `./flight_sim/flight_sim`
+*   **Physics Test (Karman Vortex Street)**: `./flight_sim/lbm_test`
+*   **Rendering Integrity Test**: `./flight_sim/particle_test`
 
-# Control
+## 🕹 Controls
 
-## Game Status
-`F1:` Pause/Start
+### Flight Control
+*   **Thrust**: `W` / `S`
+*   **Pitch/Roll**: Mouse Movement
+*   **Camera Orbit**: Mouse Drag (Test modes)
 
-`F2:` Display/Hide Force and Plane Boxes
+### Environment & Debug
+*   **Pause/Start**: `F1`
+*   **Debug Overlays**: `F2`
+*   **Reload Shaders**: `F3`
+*   **Move Sun**: `Q` / `E`
 
-`F3:` Reload Shaders
+## 🧬 Technical Highlights (Recent Refactor)
 
-`F2:` Display/Hide F22
+*   **Hybrid Solver**: Implemented Layer 1 (Local LBM) and Layer 3 (Global Sparse Wake) as per `REFACTOR.md`.
+*   **NaN-Safe Particles**: Fixed a critical bug where particles would permanently disappear due to NaN values; added robust `isnan()` / `isinf()` checks and forced respawning in Compute Shaders.
+*   **Optimized Resource Management**: Introduced `triSSBO` caching for 3D models and GPU-side vertex transformation to eliminate CPU-GPU bottlenecks.
+*   **Vertex Pulling Rendering**: Utilized zero-copy rendering from SSBOs to display millions of tracer particles with dynamic tails.
 
-`Q/E:` Move Sun
+## 📜 License & Declaration
 
-## Camera Control
-`Mouse Drag Move:` Move Camera Around
-
-`Moush Wheel:` Move Camera Distance
-
-## Flight Control
-`Increase/Decrease Thrust:` W/S
-
-`Roll left/right:` Mouse Move Left/Right
-
-`Pull up:` Mouse Move Downward
-
-`Nose down:` Mouse Move Upward
-
-# License & Declaration
-
-Please note that it's kinda buggy since it's purely my personal side project for fun. All rights of some source codes (gltools, math3D) are reserved by Richard S. Wright Jr. 
-
-Also, the texture of the F22 is by [I. Mikhelevich](https://www.the-blueprints.com/blueprints/modernplanes/lockheed/45834/view/lockheed_martinboeing_f-22_raptor/) and the texture of the ground is from google. The rights of these mentioned materials are reserved by the providers, not me. While the 3D models are made by myself.
-
-This project is experimental and the cloudwork source code is under Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.
+This project is an experimental side project. All rights of specific source codes (`gltools`, `math3D`) are reserved by Richard S. Wright Jr. 
+The F22 texture is by [I. Mikhelevich](https://www.the-blueprints.com/blueprints/modernplanes/lockheed/45834/view/lockheed_martinboeing_f-22_raptor/).
+The cloudwork source code is under Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.
