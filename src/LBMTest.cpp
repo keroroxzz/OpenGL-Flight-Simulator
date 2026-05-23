@@ -12,7 +12,7 @@ int windowHeight = 768;
 bool running = true;
 float sim_time = 0.0;
 GLfloat planePos[4] = { 0, 0, 0, 1 }; 
-M3DVector3f windVelocity = {12.0f, 0.0f, 0.0f};
+M3DVector3f windVelocity = {30.0f, 0.0f, 0.0f};
 
 M3DMatrix44f projection, model_view;
 M3DVector3f cameraPos;

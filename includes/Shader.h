@@ -36,6 +36,7 @@ public:
 	bool setUniform(const char* uniform, int type, void* value, int count=1, GLboolean Transpose = GL_FALSE, GLint texture=0);
 
 	GLint getProgram();
+    void setProgram(GLint prog);
 
 private:
 	GLchar* loadShaderText(const char* fileName);

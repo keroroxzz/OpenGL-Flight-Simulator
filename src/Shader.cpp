@@ -212,3 +212,9 @@ GLint Shader::getProgram()
 {
     return program;
 }
+
+void Shader::setProgram(GLint prog)
+{
+    if (program) glDeleteProgram(program);
+    program = prog;
+}
