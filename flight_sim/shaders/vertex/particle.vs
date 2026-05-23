@@ -28,6 +28,13 @@ void main() {
         return;
     }
 
+    if (vort < -50.0) {
+        // NaN DIAGNOSTIC COLOR: Bright Red
+        gl_Position = modelViewProj * vec4(p.pos_life.xyz, 1.0);
+        vColor = vec4(1.0, 0.0, 0.0, 1.0);
+        return;
+    }
+
     vec3 pos = p.pos_life.xyz;
     if (isTail == 1) {
         // Tail is pos - v * tail_dt

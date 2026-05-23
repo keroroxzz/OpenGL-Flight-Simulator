@@ -56,7 +56,16 @@ void main() {
     bool isOutOfBounds = any(lessThan(uvw, vec3(-0.01))) || any(greaterThan(uvw, vec3(1.01)));
     bool isExpired = (life_s <= 0.0);
     
-    bool respawn = isInvalid || isOutOfBounds || isExpired;
+    if (isInvalid) {
+        // NaN DIAGNOSTIC MODE: Force red color and dummy drift
+        p.vel_vort = vec4(5.0, 0.0, 0.0, -100.0); // -100.0 is the "RED" flag
+        p.pos_life.xyz = gridMin + vec3(0.1, 0.5, 0.5) * (gridMax - gridMin); 
+        p.pos_life.w = 1.0;
+        particles[idx] = p;
+        return;
+    }
+
+    bool respawn = isOutOfBounds || isExpired;
 
     if (respawn) {
         // Improved random seed to prevent clustering

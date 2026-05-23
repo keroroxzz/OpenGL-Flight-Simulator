@@ -3,4 +3,6 @@ CMakeCache.txt
 Makefile
 CMakeFiles/*
 flight_sim/flight_sim
+flight_sim/lbm_test
+flight_sim/particle_test
 .vscode/*
