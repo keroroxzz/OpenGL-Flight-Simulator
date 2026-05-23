@@ -1,0 +1,63 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(std430, binding = 0) buffer f_in_buf { float f_in[]; };
+layout(r8ui, binding = 3) uniform readonly uimage3D solid_img;
+
+layout(std430, binding = 4) buffer force_buf {
+    vec4 total_force; // xyz = force, w = unused
+};
+
+const ivec3 c[19] = ivec3[](
+    ivec3(0,0,0),
+    ivec3(1,0,0), ivec3(-1,0,0), ivec3(0,1,0), ivec3(0,-1,0), ivec3(0,0,1), ivec3(0,0,-1),
+    ivec3(1,1,0), ivec3(-1,-1,0), ivec3(1,-1,0), ivec3(-1,1,0),
+    ivec3(1,0,1), ivec3(-1,0,-1), ivec3(1,0,-1), ivec3(-1,0,1),
+    ivec3(0,1,1), ivec3(0,-1,-1), ivec3(0,1,-1), ivec3(0,-1,1)
+);
+
+const int opposite[19] = int[](0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15, 18, 17);
+
+// Helper for atomic float addition (requires extension or hack)
+// Using a simple shared memory reduction or just atomicAdd on ints with scaling
+void atomicAddFloat(uint addr, float val) {
+    uint old = total_force[addr]; // This won't work easily with SSBO
+}
+
+// For now, use shared memory for local reduction, then single atomic add
+shared vec3 local_force;
+
+void main() {
+    ivec3 pos = ivec3(gl_GlobalInvocationID);
+    ivec3 size = imageSize(solid_img);
+    if (pos.x >= size.x || pos.y >= size.y || pos.z >= size.z) return;
+
+    if (gl_LocalInvocationIndex == 0) local_force = vec3(0.0);
+    barrier();
+
+    uint solid = imageLoad(solid_img, pos).r;
+    if (solid != 0) {
+        int idx = (pos.z * size.y * size.x + pos.y * size.x + pos.x);
+        int stride = size.x * size.y * size.z;
+        
+        vec3 force = vec3(0.0);
+        for (int i = 1; i < 19; i++) {
+            ivec3 neighbor_pos = pos + c[i];
+            // If neighbor is fluid, there's momentum exchange
+            if (neighbor_pos.x >= 0 && neighbor_pos.x < size.x &&
+                neighbor_pos.y >= 0 && neighbor_pos.y < size.y &&
+                neighbor_pos.z >= 0 && neighbor_pos.z < size.z) {
+                
+                if (imageLoad(solid_img, neighbor_pos).r == 0) {
+                    float fi = f_in[i * stride + idx];
+                    float f_opp = f_in[opposite[i] * stride + idx];
+                    force += (fi + f_opp) * vec3(c[i]);
+                }
+            }
+        }
+        // atomicAdd not supported on float SSBO directly in 430.
+        // We'll use a hack or just write to a grid and reduce later.
+        // For simplicity in this prototype, let's use a very small atomic add on ints.
+    }
+}

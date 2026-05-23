@@ -2,6 +2,7 @@
 #include "PhysicalModel.h"
 #include <iostream>
 #include <algorithm>
+#include <cmath>
 
 GPUFluidSolver::GPUFluidSolver(int nx, int ny, int nz) : NX(nx), NY(ny), NZ(nz) {
     size = NX * NY * NZ;
@@ -20,6 +21,9 @@ GPUFluidSolver::~GPUFluidSolver() {
     if (velocityTexture) glDeleteTextures(1, &velocityTexture);
     if (solidTexture) glDeleteTextures(1, &solidTexture);
     if (particleSSBO) glDeleteBuffers(1, &particleSSBO);
+    if (forceSSBO) glDeleteBuffers(1, &forceSSBO);
+    if (wakeCandidateSSBO) glDeleteBuffers(1, &wakeCandidateSSBO);
+    if (wakeCounterBuffer) glDeleteBuffers(1, &wakeCounterBuffer);
 
     delete collisionShader;
     delete streamShader;
@@ -27,6 +31,8 @@ GPUFluidSolver::~GPUFluidSolver() {
     delete voxelizeShader;
     delete particleAdvectShader;
     delete particleRenderShader;
+    delete forceComputeShader;
+    delete wakeExtractShader;
 }
 
 void GPUFluidSolver::initBuffers() {
@@ -89,6 +95,24 @@ void GPUFluidSolver::initBuffers() {
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleSSBO);
     glBufferData(GL_SHADER_STORAGE_BUFFER, numParticles * sizeof(Particle), initial_particles.data(), GL_DYNAMIC_DRAW);
 
+    // Force SSBO
+    glGenBuffers(1, &forceSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, forceSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * 4, nullptr, GL_DYNAMIC_COPY);
+
+    // Wake Candidates SSBO
+    struct WakeCandidate {
+        float pos[4];
+        float dir_circ[4];
+    };
+    glGenBuffers(1, &wakeCandidateSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeCandidateSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(WakeCandidate) * 1024, nullptr, GL_DYNAMIC_COPY);
+
+    glGenBuffers(1, &wakeCounterBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeCounterBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(uint32_t), nullptr, GL_DYNAMIC_COPY);
+
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     glBindTexture(GL_TEXTURE_3D, 0);
 }
@@ -112,6 +136,12 @@ void GPUFluidSolver::initShaders() {
 
     voxelizeShader = new Shader(1);
     voxelizeShader->addFromFile("shaders/compute/voxelize.comp", GL_COMPUTE_SHADER);
+
+    forceComputeShader = new Shader(1);
+    forceComputeShader->addFromFile("shaders/compute/lbm_force.comp", GL_COMPUTE_SHADER);
+
+    wakeExtractShader = new Shader(1);
+    wakeExtractShader->addFromFile("shaders/compute/wake_extract.comp", GL_COMPUTE_SHADER);
 }
 
 void GPUFluidSolver::setGridBounds(M3DVector3f min, M3DVector3f max) {
@@ -138,6 +168,14 @@ void GPUFluidSolver::step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxi
     
     // 4. Particle Advect
     dispatchParticleAdvect(dt, planePos, planeWaxis, simTime);
+
+    // 5. Force Compute
+    dispatchForceCompute();
+
+    // 6. Wake Extract
+    dispatchWakeExtract(dt, planeWaxis);
+
+    wakeManager.update(dt);
 
     // Swap SSBOs
     std::swap(f_in_SSBO, f_out_SSBO);
@@ -198,6 +236,79 @@ void GPUFluidSolver::dispatchParticleAdvect(float dt, M3DVector3f planePos, M3DM
 
     glDispatchCompute(numParticles / 256 + 1, 1, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+}
+
+void GPUFluidSolver::dispatchForceCompute() {
+    forceComputeShader->use();
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, f_in_SSBO);
+    glBindImageTexture(3, solidTexture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_R8UI);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, forceSSBO);
+
+    // Clear force buffer
+    float zero[4] = {0,0,0,0};
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(zero), zero);
+
+    glDispatchCompute(NX / 8, NY / 8, NZ / 8);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    // Read back force
+    float forceData[4];
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, forceSSBO);
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(forceData), forceData);
+    
+    // Low-pass filter (Phase 6)
+    float alpha = 0.1f;
+    cfdForce[0] = forceData[0] * 100.0f; // Scale factor
+    cfdForce[1] = forceData[1] * 100.0f;
+    cfdForce[2] = forceData[2] * 100.0f;
+
+    filteredForce[0] = filteredForce[0] * (1.0f - alpha) + cfdForce[0] * alpha;
+    filteredForce[1] = filteredForce[1] * (1.0f - alpha) + cfdForce[1] * alpha;
+    filteredForce[2] = filteredForce[2] * (1.0f - alpha) + cfdForce[2] * alpha;
+}
+
+void GPUFluidSolver::dispatchWakeExtract(float dt, M3DMatrix44f planeWaxis) {
+    wakeExtractShader->use();
+    glBindImageTexture(1, velocityTexture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA16F);
+    glBindImageTexture(2, solidTexture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_R8UI);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, wakeCandidateSSBO);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, wakeCounterBuffer);
+
+    uint32_t zero = 0;
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(zero), &zero);
+
+    wakeExtractShader->setUniform("gridMin", UNI_VEC_3, gridMin);
+    wakeExtractShader->setUniform("gridMax", UNI_VEC_3, gridMax);
+
+    glDispatchCompute(NX / 8, NY / 8, NZ / 8);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    // Read back candidates and add to manager
+    uint32_t count;
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeCounterBuffer);
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(count), &count);
+    if (count > 1024) count = 1024;
+
+    struct WakeCandidate {
+        float pos[4];
+        float dir_circ[4];
+    };
+    std::vector<WakeCandidate> candidates(count);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeCandidateSSBO);
+    if (count > 0) {
+        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, count * sizeof(WakeCandidate), candidates.data());
+    }
+
+    for (uint32_t i = 0; i < count; i++) {
+        WakeVortex v;
+        m3dCopyVector3(v.position, candidates[i].pos);
+        m3dCopyVector3(v.direction, candidates[i].dir_circ);
+        v.circulation = candidates[i].dir_circ[3];
+        v.radius = 0.5f;
+        v.age = 0.0f;
+        v.decayRate = 0.2f;
+        wakeManager.addVortex(v);
+    }
 }
 
 void GPUFluidSolver::drawParticles(M3DMatrix44f mvp) {
@@ -272,5 +383,5 @@ void GPUFluidSolver::voxelizePart(ObjModel* model, M3DMatrix44f worldTransform) 
 }
 
 void GPUFluidSolver::voxelizeAircraft(F22* aircraft) {
-    // Requires access to F22 internals, better done in F22::updatePhysic
+    // Handled in F22::updatePhysic
 }

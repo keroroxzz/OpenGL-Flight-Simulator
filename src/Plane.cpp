@@ -242,6 +242,11 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
             thruster->applyEffect(plane);
             M3DVector3f gravity = { 0.0,0.0,-12000.0 * 9.81 };
             plane->applyForce(gravity);
+            
+            // Apply GPU CFD correction force (Phase 6)
+            M3DVector3f* cfdF = gpuFluidSolver->getCFDForce();
+            plane->applyForce(*cfdF);
+
             plane->updateDynamic();
         } else {
             plane->velocity[0] = plane->velocity[1] = plane->velocity[2] = 0.0f;

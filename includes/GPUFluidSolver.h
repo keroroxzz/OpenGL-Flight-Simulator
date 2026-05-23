@@ -1,6 +1,7 @@
 #pragma once
 #include "baseHeader.h"
 #include "Shader.h"
+#include "WakeSystem.h"
 #include <vector>
 
 class GPUFluidSolver {
@@ -18,11 +19,21 @@ class GPUFluidSolver {
     Shader* voxelizeShader = nullptr;
     Shader* particleAdvectShader = nullptr;
     Shader* particleRenderShader = nullptr;
+    Shader* forceComputeShader = nullptr;
+    Shader* wakeExtractShader = nullptr;
 
     GLuint particleSSBO = 0;
     int numParticles = 100000;
 
+    GLuint forceSSBO = 0;
+    GLuint wakeCandidateSSBO = 0;
+    GLuint wakeCounterBuffer = 0;
+
+    WakeManager wakeManager;
+
     M3DVector3f gridMin, gridMax;
+    M3DVector3f cfdForce = {0,0,0};
+    M3DVector3f filteredForce = {0,0,0};
 
 public:
     GPUFluidSolver(int nx = 96, int ny = 96, int nz = 96);
@@ -43,11 +54,14 @@ public:
     void drawParticles(M3DMatrix44f mvp);
 
     GLuint getVelocityTexture() { return velocityTexture; }
-    
+    M3DVector3f* getCFDForce() { return &filteredForce; }
+
     void dispatchCollision();
     void dispatchStream();
     void dispatchReconstruct();
     void dispatchParticleAdvect(float dt, M3DVector3f planePos, M3DMatrix44f planeWaxis, float simTime);
+    void dispatchForceCompute();
+    void dispatchWakeExtract(float dt, M3DMatrix44f planeWaxis);
 
 private:
     void initBuffers();

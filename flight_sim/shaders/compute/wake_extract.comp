@@ -1,0 +1,53 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(rgba16f, binding = 1) uniform readonly image3D velocity_img;
+layout(r8ui, binding = 2) uniform readonly uimage3D solid_img;
+
+struct WakeCandidate {
+    vec4 pos;
+    vec4 dir_circ; // xyz = vorticity (direction), w = magnitude
+};
+
+layout(std430, binding = 3) buffer candidate_buf {
+    WakeCandidate candidates[];
+};
+
+layout(std430, binding = 4) buffer counter_buf {
+    uint count;
+};
+
+uniform vec3 gridMin;
+uniform vec3 gridMax;
+
+void main() {
+    ivec3 pos = ivec3(gl_GlobalInvocationID);
+    ivec3 size = imageSize(velocity_img);
+    if (pos.x < 1 || pos.x >= size.x-1 || pos.y < 1 || pos.y >= size.y-1 || pos.z < 1 || pos.z >= size.z-1) return;
+
+    if (imageLoad(solid_img, pos).r != 0) return;
+
+    // Finite difference vorticity
+    vec3 vx_p = imageLoad(velocity_img, pos + ivec3(1,0,0)).xyz;
+    vec3 vx_m = imageLoad(velocity_img, pos - ivec3(1,0,0)).xyz;
+    vec3 vy_p = imageLoad(velocity_img, pos + ivec3(0,1,0)).xyz;
+    vec3 vy_m = imageLoad(velocity_img, pos - ivec3(0,1,0)).xyz;
+    vec3 vz_p = imageLoad(velocity_img, pos + ivec3(0,0,1)).xyz;
+    vec3 vz_m = imageLoad(velocity_img, pos - ivec3(0,0,1)).xyz;
+    
+    vec3 curl;
+    curl.x = (vz_p.y - vz_m.y) - (vy_p.z - vy_m.z);
+    curl.y = (vx_p.z - vx_m.z) - (vz_p.x - vz_m.x);
+    curl.z = (vy_p.x - vy_m.x) - (vx_p.y - vx_m.y);
+    
+    float mag = length(curl);
+    if (mag > 5.0) { // Threshold for wake generation
+        uint idx = atomicAdd(count, 1);
+        if (idx < 1024) {
+            vec3 worldPos = gridMin + (vec3(pos) / vec3(size)) * (gridMax - gridMin);
+            candidates[idx].pos = vec4(worldPos, 1.0);
+            candidates[idx].dir_circ = vec4(normalize(curl), mag);
+        }
+    }
+}
