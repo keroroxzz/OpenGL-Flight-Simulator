@@ -3,13 +3,16 @@
 #include <iostream>
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 GPUFluidSolver::GPUFluidSolver(int nx, int ny, int nz) : NX(nx), NY(ny), NZ(nz) {
     size = NX * NY * NZ;
-    // REFACTOR: New default bounds to match the scale
-    gridMin[0] = -15.0f; gridMin[1] = -10.0f; gridMin[2] = -10.0f;
-    gridMax[0] = 15.0f; gridMax[1] = 10.0f; gridMax[2] = 10.0f;
+    
+    // REFACTOR: Grid must exactly match lattice size * dx (128*0.25 = 32, 64*0.25 = 16)
+    gridMin[0] = -16.0f; gridMin[1] = -8.0f; gridMin[2] = -8.0f;
+    gridMax[0] = 16.0f; gridMax[1] = 8.0f; gridMax[2] = 8.0f;
     m3dCopyVector3(prevGridMin, gridMin);
+    
     initBuffers();
     initShaders();
 }
@@ -25,6 +28,7 @@ GPUFluidSolver::~GPUFluidSolver() {
     if (wakeCounterBuffer) glDeleteBuffers(1, &wakeCounterBuffer);
     if (wakeSSBO) glDeleteBuffers(1, &wakeSSBO);
     if (errorBuffer) glDeleteBuffers(1, &errorBuffer);
+    
     delete collisionShader; delete streamShader; delete reconstructShader; delete voxelizeShader;
     delete voxelizeCylinderShader; delete particleAdvectShader; delete particleRenderShader;
     delete forceComputeShader; delete wakeExtractShader; delete wakeInjectShader;
@@ -35,20 +39,27 @@ void GPUFluidSolver::initBuffers() {
     std::vector<float> initial_f(size * 19, 0.0f);
     float w[19] = { 1.0f/3.0f, 1.0f/18.0f, 1.0f/18.0f, 1.0f/18.0f, 1.0f/18.0f, 1.0f/18.0f, 1.0f/18.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f };
     for (int i = 0; i < 19; i++) for (int j = 0; j < size; j++) initial_f[i * size + j] = w[i];
-    glGenBuffers(1, &f_in_SSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, f_in_SSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, initial_f.size() * 4, initial_f.data(), GL_DYNAMIC_DRAW);
-    glGenBuffers(1, &f_out_SSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, f_out_SSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, initial_f.size() * 4, initial_f.data(), GL_DYNAMIC_DRAW);
+    
+    glGenBuffers(1, &f_in_SSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, f_in_SSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, initial_f.size() * sizeof(float), initial_f.data(), GL_DYNAMIC_DRAW);
+    glGenBuffers(1, &f_out_SSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, f_out_SSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, initial_f.size() * sizeof(float), initial_f.data(), GL_DYNAMIC_DRAW);
+    
     glGenTextures(1, &velocityTexture); glBindTexture(GL_TEXTURE_3D, velocityTexture);
     std::vector<float> initial_vel(size * 4, 0.0f); for (int i = 0; i < size; i++) initial_vel[i * 4 + 3] = 1.0f;
     glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA16F, NX, NY, NZ, 0, GL_RGBA, GL_FLOAT, initial_vel.data());
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-    glGenTextures(1, &solidTexture); glBindTexture(GL_TEXTURE_3D, solidTexture); glTexImage3D(GL_TEXTURE_3D, 0, GL_R8UI, NX, NY, NZ, 0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, nullptr);
+    
+    glGenTextures(1, &solidTexture); glBindTexture(GL_TEXTURE_3D, solidTexture); 
+    // REFACTOR: Explicitly zero out solid texture to prevent uninitialized VRAM garbage
+    std::vector<uint8_t> initial_solid(size, 0);
+    glTexImage3D(GL_TEXTURE_3D, 0, GL_R8UI, NX, NY, NZ, 0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, initial_solid.data());
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    
     glGenBuffers(1, &particleSSBO); resetParticles(); 
     glGenBuffers(1, &forceSSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, forceSSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, 16, nullptr, GL_DYNAMIC_COPY);
-    glGenBuffers(1, &wakeCandidateSSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeCandidateSSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, 32768, nullptr, GL_DYNAMIC_COPY);
+    glGenBuffers(1, &wakeCandidateSSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeCandidateSSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float)*8*1024, nullptr, GL_DYNAMIC_COPY);
     glGenBuffers(1, &wakeCounterBuffer); glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeCounterBuffer); glBufferData(GL_SHADER_STORAGE_BUFFER, 4, nullptr, GL_DYNAMIC_COPY);
-    glGenBuffers(1, &wakeSSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeSSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, 49152, nullptr, GL_DYNAMIC_DRAW);
+    glGenBuffers(1, &wakeSSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeSSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float)*12*1024, nullptr, GL_DYNAMIC_DRAW);
     glGenBuffers(1, &errorBuffer); glBindBuffer(GL_SHADER_STORAGE_BUFFER, errorBuffer); glBufferData(GL_SHADER_STORAGE_BUFFER, 4, nullptr, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
@@ -58,12 +69,14 @@ void GPUFluidSolver::initShaders() {
     streamShader = new Shader(1); streamShader->addFromFile("shaders/compute/lbm_stream.comp", GL_COMPUTE_SHADER);
     reconstructShader = new Shader(1); reconstructShader->addFromFile("shaders/compute/velocity_reconstruct.comp", GL_COMPUTE_SHADER);
     particleAdvectShader = new Shader(1); particleAdvectShader->addFromFile("shaders/compute/particle_advect.comp", GL_COMPUTE_SHADER);
+    
     const char* vsSource = "#version 430 core\nstruct Particle { vec4 pos_life; vec4 vel_vort; };\nlayout(std430, binding = 0) buffer p_buf { Particle particles[]; };\nuniform mat4 modelViewProj;\nout vec4 vColor;\nvoid main() {\n  Particle p = particles[gl_VertexID];\n  float alpha = p.pos_life.w;\n  if (alpha <= 0.01) { gl_Position = vec4(0,0,0,0); return; }\n  gl_Position = modelViewProj * vec4(p.pos_life.xyz, 1.0);\n  float vort = p.vel_vort.w;\n  if (vort < -50.0) vColor = vec4(1,0,0,1); \n  else vColor = vec4(0.2, 0.8, 1.0, alpha); \n}\n";
     const char* fsSource = "#version 430 core\nin vec4 vColor; out vec4 color; void main() { color = vColor; }\n";
     GLuint vs = glCreateShader(GL_VERTEX_SHADER); glShaderSource(vs, 1, &vsSource, NULL); glCompileShader(vs);
     GLuint fs = glCreateShader(GL_FRAGMENT_SHADER); glShaderSource(fs, 1, &fsSource, NULL); glCompileShader(fs);
     GLuint prog = glCreateProgram(); glAttachShader(prog, vs); glAttachShader(prog, fs); glLinkProgram(prog);
     particleRenderShader = new Shader(0); particleRenderShader->setProgram(prog); 
+    
     voxelizeShader = new Shader(1); voxelizeShader->addFromFile("shaders/compute/voxelize.comp", GL_COMPUTE_SHADER);
     forceComputeShader = new Shader(1); forceComputeShader->addFromFile("shaders/compute/lbm_force.comp", GL_COMPUTE_SHADER);
     wakeExtractShader = new Shader(1); wakeExtractShader->addFromFile("shaders/compute/wake_extract.comp", GL_COMPUTE_SHADER);
@@ -97,17 +110,24 @@ void GPUFluidSolver::step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxi
     extern M3DVector3f windVelocity; M3DVector3f relWindPhys; m3dSubtractVectors3(relWindPhys, windVelocity, planeVel);
     M3DVector3f localWindLattice = { relWindPhys[0]*u_scale, relWindPhys[1]*u_scale, relWindPhys[2]*u_scale };
     for(int i=0; i<3; i++) { if(localWindLattice[i]>0.15f) localWindLattice[i]=0.15f; if(localWindLattice[i]<-0.15f) localWindLattice[i]=-0.15f; }
+
     if (vortexPhysicsShader) {
         vortexPhysicsShader->use(); vortexPhysicsShader->setUniform("u_dt", UNI_FLOAT_1, &dt);
         vortexPhysicsShader->setUniform("u_globalWind", UNI_VEC_3, windVelocity);
         int maxV = 1024; vortexPhysicsShader->setUniform("u_maxVortices", UNI_INT_1, &maxV);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, wakeSSBO); glDispatchCompute(maxV/128, 1, 1); glMemoryBarrier(GL_ALL_BARRIER_BITS);
     }
-    dispatchWakeInject(planePos); dispatchCollision();
+    
+    dispatchWakeInject(planePos); 
+    dispatchCollision();
+    
     if (streamShader) { streamShader->use(); streamShader->setUniform("u_wind", UNI_VEC_3, localWindLattice); dispatchStream(); }
+    
     dispatchReconstruct(); glMemoryBarrier(GL_ALL_BARRIER_BITS);
     dispatchParticleAdvect(dt, planePos, planeWaxis, simTime); glMemoryBarrier(GL_ALL_BARRIER_BITS);
-    dispatchForceCompute(); dispatchWakeExtract(dt, planeWaxis, planePos);
+    dispatchForceCompute(); 
+    dispatchWakeExtract(dt, planeWaxis, planePos);
+
     if (stabilityShader) {
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, f_in_SSBO); glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, errorBuffer);
         uint32_t zero_err = 0; glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 4, &zero_err);
@@ -115,10 +135,11 @@ void GPUFluidSolver::step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxi
         glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
         uint32_t has_error = 0; glBindBuffer(GL_SHADER_STORAGE_BUFFER, errorBuffer); glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 4, &has_error);
         if (has_error) {
+            std::cout << "[GPUFluidSolver] Instability! Resetting..." << std::endl;
             std::vector<float> initial_f(size * 19, 0.0f); float w[19] = { 1.0f/3.0f, 1.0f/18.0f, 1.0f/18.0f, 1.0f/18.0f, 1.0f/18.0f, 1.0f/18.0f, 1.0f/18.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f };
             for (int i=0; i<19; i++) for (int j=0; j<size; j++) initial_f[i*size+j] = w[i];
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, f_in_SSBO); glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, initial_f.size()*4, initial_f.data());
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, f_out_SSBO); glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, initial_f.size()*4, initial_f.data());
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, f_in_SSBO); glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, initial_f.size()*sizeof(float), initial_f.data());
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, f_out_SSBO); glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, initial_f.size()*sizeof(float), initial_f.data());
             resetParticles(); filteredForce[0] = filteredForce[1] = filteredForce[2] = 0.0f;
         }
     }
@@ -141,7 +162,7 @@ void GPUFluidSolver::resetParticles() {
         initial_particles[i].pos_life[3] = 0.5f + (float(rand())/RAND_MAX)*0.5f; 
         for(int j=0; j<4; j++) initial_particles[i].vel_vort[j] = 0.0f;
     }
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleSSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, initial_particles.size()*32, initial_particles.data(), GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleSSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, numParticles * sizeof(Particle), initial_particles.data(), GL_DYNAMIC_DRAW);
 }
 
 void GPUFluidSolver::dispatchCollision() {
@@ -155,9 +176,10 @@ void GPUFluidSolver::dispatchCollision() {
 }
 
 void GPUFluidSolver::dispatchStream() {
+    if (!streamShader) return; streamShader->use();
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, f_in_SSBO); glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, f_out_SSBO);
     glBindImageTexture(3, solidTexture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_R8UI);
-    glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
+    glDispatchCompute(NX/8, NY / 8, NZ / 8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
 }
 
 void GPUFluidSolver::dispatchReconstruct() {
@@ -233,14 +255,20 @@ void GPUFluidSolver::drawParticles(M3DMatrix44f mvp) {
     glMemoryBarrier(GL_ALL_BARRIER_BITS);
     particleRenderShader->use();
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleSSBO);
-    particleRenderShader->setUniform("modelViewProj", UNI_MATRIX_4, mvp);
+    GLuint prog = particleRenderShader->getProgram();
+    GLint mvpLoc = glGetUniformLocation(prog, "modelViewProj");
+    glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, mvp);
     glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE); glDepthMask(GL_FALSE);
     glPointSize(4.0f); glDrawArrays(GL_POINTS, 0, numParticles);
     glDepthMask(GL_TRUE); glDisable(GL_BLEND);
 }
 
 void GPUFluidSolver::clearSolid() {
-    GLuint zero = 0; glBindTexture(GL_TEXTURE_3D, solidTexture); glClearTexImage(solidTexture, 0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, &zero);
+    GLuint zero = 0; 
+    // Compatibility safe clear
+    std::vector<uint8_t> initial_solid(size, 0);
+    glBindTexture(GL_TEXTURE_3D, solidTexture); 
+    glTexSubImage3D(GL_TEXTURE_3D, 0, 0,0,0, NX, NY, NZ, GL_RED_INTEGER, GL_UNSIGNED_BYTE, initial_solid.data());
 }
 
 void GPUFluidSolver::voxelizePart(ObjModel* model, M3DMatrix44f worldTransform) {

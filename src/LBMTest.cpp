@@ -12,16 +12,17 @@ int windowHeight = 768;
 bool running = true;
 float sim_time = 0.0;
 GLfloat planePos[4] = { 0, 0, 0, 1 }; 
-M3DVector3f windVelocity = {30.0f, 0.0f, 0.0f};
+M3DVector3f windVelocity = {20.0f, 0.0f, 0.0f};
 
 M3DMatrix44f projection, model_view;
 M3DVector3f cameraPos;
 M3DVector3f cameraFocus = { 0, 0, 0 };
 M3DVector2f pmouse = {0, 0};
 
-float camDistance = 28.0f;
-float camAzimuth = 0.0f;
-float camPolar = 1.2f;
+// Perfect side-on view
+float camDistance = 35.0f;
+float camAzimuth = -1.57f; // Look down X axis (from side)
+float camPolar = 0.2f;
 
 GPUFluidSolver* solver = nullptr;
 GLuint testVAO; 
@@ -42,10 +43,31 @@ void SetupRC() {
     UpdateCamera();
 
     solver = new GPUFluidSolver(128, 64, 64);
-    M3DVector3f bboxMin = { -15.0f, -8.0f, -8.0f };
-    M3DVector3f bboxMax = { 15.0f, 8.0f, 8.0f };
-    solver->setGridBounds(bboxMin, bboxMax);
     solver->resetParticles(); // Randomized start
+}
+
+void DrawBoundingBox() {
+    glDisable(GL_LIGHTING);
+    glColor3f(1.0f, 1.0f, 0.0f); // Yellow
+    glBegin(GL_LINES);
+    float mx = -16.0f, my = -8.0f, mz = -8.0f;
+    float Mx = 16.0f, My = 8.0f, Mz = 8.0f;
+    // Bottom
+    glVertex3f(mx, my, mz); glVertex3f(Mx, my, mz);
+    glVertex3f(Mx, my, mz); glVertex3f(Mx, My, mz);
+    glVertex3f(Mx, My, mz); glVertex3f(mx, My, mz);
+    glVertex3f(mx, My, mz); glVertex3f(mx, my, mz);
+    // Top
+    glVertex3f(mx, my, Mz); glVertex3f(Mx, my, Mz);
+    glVertex3f(Mx, my, Mz); glVertex3f(Mx, My, Mz);
+    glVertex3f(Mx, My, Mz); glVertex3f(mx, My, Mz);
+    glVertex3f(mx, My, Mz); glVertex3f(mx, my, Mz);
+    // Pillars
+    glVertex3f(mx, my, mz); glVertex3f(mx, my, Mz);
+    glVertex3f(Mx, my, mz); glVertex3f(Mx, my, Mz);
+    glVertex3f(Mx, My, mz); glVertex3f(Mx, My, Mz);
+    glVertex3f(mx, My, mz); glVertex3f(mx, My, Mz);
+    glEnd();
 }
 
 void RenderScene() {
@@ -60,6 +82,8 @@ void RenderScene() {
     glLoadIdentity();
     gluLookAt(cameraPos[0], cameraPos[1], cameraPos[2], cameraFocus[0], cameraFocus[1], cameraFocus[2], 0, 0, 1);
     glGetFloatv(GL_MODELVIEW_MATRIX, model_view);
+
+    DrawBoundingBox();
 
     // Draw cylinder
     glPushMatrix();
@@ -91,6 +115,8 @@ void idle() {
     }
     lastTime = currentTime;
 
+    static int warmUpFrames = 100; // Warm up LBM before showing particles
+
     if (running && solver) {
         solver->clearSolid();
         M3DVector3f center = { 0.0f, 0.0f, 0.0f };
@@ -104,6 +130,11 @@ void idle() {
         for (int i = 0; i < 5; i++) {
             solver->step(0.002f, dummyPlaneVel, identity, center, sim_time);
             sim_time += 0.002f;
+        }
+
+        if (warmUpFrames > 0) {
+            warmUpFrames--;
+            if (warmUpFrames == 0) solver->resetParticles();
         }
     }
     glutPostRedisplay();
@@ -135,9 +166,9 @@ int main(int argc, char* argv[]) {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
     glutInitWindowSize(windowWidth, windowHeight);
-    glutInitContextVersion(4, 3);
+    glutInitContextVersion(4, 6); // Require 4.6 for maximum compatibility
     glutInitContextProfile(GLUT_COMPATIBILITY_PROFILE);
-    glutCreateWindow("LBM Physical NaN Diagnostic");
+    glutCreateWindow("LBM Perfect Alignment Test");
     glewInit();
     SetupRC();
     glutDisplayFunc(RenderScene);
