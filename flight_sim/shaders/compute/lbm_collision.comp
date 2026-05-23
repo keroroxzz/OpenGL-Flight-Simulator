@@ -9,6 +9,7 @@ layout(rgba16f, binding = 2) uniform readonly image3D velocity_img;
 layout(r8ui, binding = 3) uniform readonly uimage3D solid_img;
 
 uniform float tau;
+uniform float SmagorinskyConstant;
 
 const vec3 c[19] = vec3[](
     vec3(0,0,0),
@@ -26,6 +27,10 @@ const float w[19] = float[](
     1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0
 );
 
+const float MAX_VELOCITY = 0.2; // ~ Mach 0.35
+const float MIN_DENSITY = 0.5;
+const float MAX_DENSITY = 2.0;
+
 void main() {
     ivec3 pos = ivec3(gl_GlobalInvocationID);
     ivec3 size = imageSize(velocity_img);
@@ -37,18 +42,51 @@ void main() {
     uint solid = imageLoad(solid_img, pos).r;
     if (solid != 0) return;
 
-    // Load velocity and density
     vec4 vel_rho = imageLoad(velocity_img, pos);
     vec3 u = vel_rho.xyz;
-    float rho = vel_rho.w;
+    float rho = clamp(vel_rho.w, MIN_DENSITY, MAX_DENSITY);
+
+    // Enforce Mach Limit (Rule 6.4)
+    float speed = length(u);
+    if (speed > MAX_VELOCITY) {
+        u = (u / speed) * MAX_VELOCITY;
+    }
+
+    float f[19];
+    for(int i=0; i<19; i++) f[i] = f_in[i * stride + idx];
 
     float u2 = dot(u, u);
+    float feq[19];
+    for (int i = 0; i < 19; i++) {
+        float cu = dot(c[i], u);
+        feq[i] = w[i] * rho * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
+    }
+
+    float tau_eff = tau;
+    if (SmagorinskyConstant > 0.0) {
+        mat3 Q = mat3(0.0);
+        for (int i = 0; i < 19; i++) {
+            float fi_neq = f[i] - feq[i];
+            Q[0][0] += fi_neq * c[i].x * c[i].x;
+            Q[0][1] += fi_neq * c[i].x * c[i].y;
+            Q[0][2] += fi_neq * c[i].x * c[i].z;
+            Q[1][1] += fi_neq * c[i].y * c[i].y;
+            Q[1][2] += fi_neq * c[i].y * c[i].z;
+            Q[2][2] += fi_neq * c[i].z * c[i].z;
+        }
+        Q[1][0] = Q[0][1]; Q[2][0] = Q[0][2]; Q[2][1] = Q[1][2];
+        
+        float Pi_mag = 0.0;
+        for(int i=0; i<3; i++) for(int j=0; j<3; j++) Pi_mag += Q[i][j] * Q[i][j];
+        Pi_mag = sqrt(Pi_mag);
+        
+        tau_eff = 0.5 * (tau + sqrt(tau * tau + 18.0 * SmagorinskyConstant * SmagorinskyConstant * Pi_mag / rho));
+    }
+    
+    // Clamp relaxation time (Rule 6.3)
+    tau_eff = clamp(tau_eff, 0.51, 2.0);
 
     for (int i = 0; i < 19; i++) {
-        float fi = f_in[i * stride + idx];
-        float cu = dot(c[i], u);
-        float feq = w[i] * rho * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
-        
-        f_out[i * stride + idx] = fi - (fi - feq) / tau;
+        f_out[i * stride + idx] = f[i] - (f[i] - feq[i]) / tau_eff;
     }
 }

@@ -167,9 +167,16 @@ bool Shader::setUniform(const char* uniform, int type, void* value, int count, G
     switch (type)
     {
     case UNI_INT_1:
-        glUniform1i(i, *(GLint*)value);
+        glUniform1iv(i, count, (GLint*)value);
+        break;
+    case UNI_INT_2:
+        glUniform2iv(i, count, (GLint*)value);
+        break;
+    case UNI_INT_3:
+        glUniform3iv(i, count, (GLint*)value);
         break;
     case UNI_FLOAT_1:
+
         glUniform1f(i, *((GLfloat*)value));
         break;
     case UNI_VEC_1:

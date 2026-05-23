@@ -4,22 +4,24 @@ layout(local_size_x = 256) in;
 
 struct Particle {
     vec4 pos_life; // xyz = pos, w = normalized life
-    vec4 vel_maxLife; // xyz = vel, w = maxLife
+    vec4 vel_vort; // xyz = vel, w = vorticity magnitude
 };
 
 layout(std430, binding = 0) buffer particle_buf {
     Particle particles[];
 };
 
-layout(rgba16f, binding = 1) uniform readonly image3D velocity_img;
+uniform sampler3D velocity_tex; // Switch to sampler for linear interpolation
 layout(r8ui, binding = 2) uniform readonly uimage3D solid_img;
 
 uniform float dt;
 uniform vec3 gridMin;
 uniform vec3 gridMax;
-uniform vec3 spawnPos; // Center of spawn area (e.g. in front of aircraft)
+uniform vec3 spawnPos;
 uniform vec3 spawnRange;
 uniform float iTime;
+
+const float MAX_LIFE = 5.0;
 
 uint hash(uint x) {
     x = ((x >> 16) ^ x) * 0x45d9f3b;
@@ -32,49 +34,67 @@ float random(uint seed) {
     return float(hash(seed)) / 4294967296.0;
 }
 
+vec3 getVelocity(vec3 worldPos) {
+    vec3 uvw = (worldPos - gridMin) / (gridMax - gridMin);
+    // Smooth linear interpolation from hardware
+    return texture(velocity_tex, uvw).xyz;
+}
+
 void main() {
     uint idx = gl_GlobalInvocationID.x;
     if (idx >= particles.length()) return;
 
     Particle p = particles[idx];
     
-    // Update life
-    float life = p.pos_life.w * p.vel_maxLife.w;
-    life -= dt;
+    float life_s = p.pos_life.w * MAX_LIFE; 
+    life_s -= dt;
     
-    bool respawn = (life <= 0.0);
+    vec3 uvw = (p.pos_life.xyz - gridMin) / (gridMax - gridMin);
     
-    // Check if out of grid bounds
-    vec3 localPos = (p.pos_life.xyz - gridMin) / (gridMax - gridMin);
-    if (localPos.x < 0.0 || localPos.x > 1.0 || 
-        localPos.y < 0.0 || localPos.y > 1.0 || 
-        localPos.z < 0.0 || localPos.z > 1.0) {
-        respawn = true;
-    }
+    // REFACTOR: Robust failure detection (NaN, Inf, or Out of Bounds)
+    bool isInvalid = any(isnan(p.pos_life.xyz)) || any(isinf(p.pos_life.xyz));
+    bool isOutOfBounds = any(lessThan(uvw, vec3(-0.01))) || any(greaterThan(uvw, vec3(1.01)));
+    bool isExpired = (life_s <= 0.0);
+    
+    bool respawn = isInvalid || isOutOfBounds || isExpired;
 
     if (respawn) {
-        uint seed = idx + uint(iTime * 1000.0);
-        vec3 randOffset = vec3(random(seed), random(seed + 1), random(seed + 2)) - 0.5;
-        p.pos_life.xyz = spawnPos + randOffset * spawnRange;
-        p.vel_maxLife.w = 0.5 + random(seed + 3) * 1.0; // maxLife
-        p.pos_life.w = 1.0; // normalized life
-        p.vel_maxLife.xyz = vec3(0.0);
-    } else {
-        // Advection (RK2)
-        ivec3 size = imageSize(velocity_img);
-        vec3 uvw = (p.pos_life.xyz - gridMin) / (gridMax - gridMin);
+        // Improved random seed to prevent clustering
+        uint seed = idx + uint(iTime * 1337.0) + uint(hash(idx) * 0.1);
+        vec3 randOffset = vec3(random(seed), random(seed + 7), random(seed + 13)) - 0.5;
         
-        // Simple Euler for now, upgrade to RK2 later
-        vec3 v = imageLoad(velocity_img, ivec3(uvw * vec3(size))).xyz;
-        
-        // Check solid
-        if (imageLoad(solid_img, ivec3(uvw * vec3(size))).r != 0) {
-            p.pos_life.w = 0.0; // Kill it
+        if (random(seed + 19) < 0.40) {
+            p.pos_life.xyz = gridMin + vec3(random(seed+23), random(seed+29), random(seed+31)) * (gridMax - gridMin);
         } else {
-            p.pos_life.xyz += v * dt;
-            p.vel_maxLife.xyz = v;
-            p.pos_life.w = life / p.vel_maxLife.w;
+            p.pos_life.xyz = spawnPos + randOffset * spawnRange;
         }
+        
+        p.pos_life.w = 0.4 + random(seed + 37) * 0.6;
+        p.vel_vort = vec4(0.0);
+    } else {
+        // Sub-stepping for smooth advection
+        const int steps = 2;
+        float sub_dt = dt / float(steps);
+        for(int i=0; i<steps; i++) {
+            vec3 v = getVelocity(p.pos_life.xyz);
+            p.pos_life.xyz += v * sub_dt;
+            p.vel_vort.xyz = v;
+        }
+        
+        // Dynamic vorticity sampling
+        ivec3 size = textureSize(velocity_tex, 0);
+        vec3 uvw_v = (p.pos_life.xyz - gridMin) / (gridMax - gridMin);
+        vec3 eps = 1.0 / vec3(size);
+        
+        vec3 v_px = texture(velocity_tex, uvw_v + vec3(eps.x, 0, 0)).xyz;
+        vec3 v_mx = texture(velocity_tex, uvw_v - vec3(eps.x, 0, 0)).xyz;
+        vec3 v_py = texture(velocity_tex, uvw_v + vec3(0, eps.y, 0)).xyz;
+        vec3 v_my = texture(velocity_tex, uvw_v - vec3(0, eps.y, 0)).xyz;
+        vec3 v_pz = texture(velocity_tex, uvw_v + vec3(0, 0, eps.z)).xyz;
+        vec3 v_mz = texture(velocity_tex, uvw_v - vec3(0, 0, eps.z)).xyz;
+        p.vel_vort.w = length(vec3( (v_pz.y - v_mz.y) - (v_py.z - v_my.z), (v_px.z - v_mx.z) - (v_pz.x - v_mz.x), (v_py.x - v_my.x) - (v_px.y - v_mx.y) ));
+        
+        p.pos_life.w = life_s / MAX_LIFE;
     }
 
     particles[idx] = p;

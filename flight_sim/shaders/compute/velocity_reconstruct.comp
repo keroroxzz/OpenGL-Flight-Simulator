@@ -5,6 +5,8 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 layout(std430, binding = 0) buffer f_in_buf { float f_in[]; };
 layout(rgba16f, binding = 1) uniform writeonly image3D velocity_img;
 
+uniform float v_scale; // To convert lattice u to physical m/s
+
 const vec3 c[19] = vec3[](
     vec3(0,0,0),
     vec3(1,0,0), vec3(-1,0,0), vec3(0,1,0), vec3(0,-1,0), vec3(0,0,1), vec3(0,0,-1),
@@ -22,20 +24,21 @@ void main() {
     int stride = size.x * size.y * size.z;
 
     float rho = 0.0;
-    vec3 u = vec3(0.0);
+    vec3 u_lat = vec3(0.0);
 
     for (int i = 0; i < 19; i++) {
         float fi = f_in[i * stride + idx];
         rho += fi;
-        u += fi * c[i];
+        u_lat += fi * c[i];
     }
 
-    if (rho > 0.0) {
-        u /= rho;
+    if (rho > 0.01) {
+        u_lat /= rho;
     } else {
         rho = 1.0;
-        u = vec3(0.0);
+        u_lat = vec3(0.0);
     }
 
-    imageStore(velocity_img, pos, vec4(u, rho));
+    // Store physical velocity (m/s)
+    imageStore(velocity_img, pos, vec4(u_lat * v_scale, rho));
 }

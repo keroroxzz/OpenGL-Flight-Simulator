@@ -1,0 +1,61 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(std430, binding = 0) buffer f_buf { float f[]; };
+layout(rgba16f, binding = 1) uniform image3D velocity_img;
+
+struct WakeVortex {
+    vec4 position;
+    vec4 direction_circ; // xyz = dir, w = circulation
+    vec4 params; // x = radius, y = turbulence, z = age, w = decay
+};
+
+layout(std430, binding = 2) buffer wake_buf {
+    WakeVortex vortices[];
+};
+
+uniform uint numVortices;
+uniform vec3 gridMin;
+uniform vec3 gridMax;
+
+// Biot-Savart approximation for a vortex segment/point
+vec3 calculateVortexVelocity(vec3 p, vec3 vPos, vec3 vDir, float circulation, float radius) {
+    vec3 r = p - vPos;
+    float distSq = dot(r, r);
+    float dist = sqrt(distSq);
+    
+    if (dist < 0.01) return vec3(0.0);
+    
+    // Lamb-Oseen or simple smoothed vortex profile
+    float coreFactor = 1.0 - exp(-distSq / (radius * radius));
+    vec3 vel = (circulation / (2.0 * 3.14159 * dist)) * coreFactor * cross(vDir, r / dist);
+    
+    return vel;
+}
+
+void main() {
+    ivec3 pos = ivec3(gl_GlobalInvocationID);
+    ivec3 size = imageSize(velocity_img);
+    if (pos.x >= size.x || pos.y >= size.y || pos.z >= size.z) return;
+
+    vec3 worldPos = gridMin + (vec3(pos) / vec3(size)) * (gridMax - gridMin);
+    
+    vec3 inducedVel = vec3(0.0);
+    for (uint i = 0; i < numVortices; i++) {
+        inducedVel += calculateVortexVelocity(
+            worldPos, 
+            vortices[i].position.xyz, 
+            vortices[i].direction_circ.xyz, 
+            vortices[i].direction_circ.w, 
+            vortices[i].params.x
+        );
+    }
+
+    if (length(inducedVel) > 0.001) {
+        vec4 oldVal = imageLoad(velocity_img, pos);
+        // Inject as a bias to the velocity field
+        // This will be picked up by the next collision step
+        imageStore(velocity_img, pos, vec4(oldVal.xyz + inducedVel, oldVal.w));
+    }
+}

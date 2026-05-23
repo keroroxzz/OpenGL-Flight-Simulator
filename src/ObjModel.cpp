@@ -225,7 +225,38 @@ void ObjModel::InitVBO()
 
 ObjModel::~ObjModel()
 {
-	delete[] pVerts; delete[] pTxd; delete[] pNorm; delete[] pInd;}
+	delete[] pVerts; delete[] pTxd; delete[] pNorm; delete[] pInd;
+    if (VBO[0]) glDeleteBuffers(4, VBO);
+    if (triSSBO) glDeleteBuffers(1, &triSSBO);
+}
+
+GLuint ObjModel::getTriSSBO()
+{
+    if (triSSBO != 0) return triSSBO;
+
+    struct GPUTriangle {
+        float p0[4], p1[4], p2[4];
+    };
+    std::vector<GPUTriangle> triangles(n_Ind / 3);
+    for (int i = 0; i < n_Ind / 3; i++) {
+        int i0 = pInd[i * 3 + 0];
+        int i1 = pInd[i * 3 + 1];
+        int i2 = pInd[i * 3 + 2];
+        for (int j = 0; j < 3; j++) {
+            triangles[i].p0[j] = pVerts[i0 * 3 + j];
+            triangles[i].p1[j] = pVerts[i1 * 3 + j];
+            triangles[i].p2[j] = pVerts[i2 * 3 + j];
+        }
+        triangles[i].p0[3] = triangles[i].p1[3] = triangles[i].p2[3] = 1.0f;
+    }
+
+    glGenBuffers(1, &triSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, triSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, triangles.size() * sizeof(GPUTriangle), triangles.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    return triSSBO;
+}
 
 void ObjModel::draw(int mode, int drawmode, GLint model_view_loc)
 {

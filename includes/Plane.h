@@ -31,14 +31,11 @@ public:
 	F22();
 
 	void updatePhysic(bool windTunnel = false, M3DVector3f wind = nullptr);
+    void updateLBMTest(M3DVector3f wind);
 
 	void display(M3DMatrix44f cvmatrix, GLint model_view_loc=-1);
 	void visualize(M3DMatrix44f cvmatrix);
     void drawFlowField(M3DMatrix44f cvmatrix);
-    void drawSlice(M3DMatrix44f cvmatrix, Shader* sliceShader);
-
-    void rotateSlice(float roll, float pitch);
-    void moveSlice(float forward);
 
 	void mouseControl(float x, float y);
 	void thrustControl(float v);

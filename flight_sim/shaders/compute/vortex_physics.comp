@@ -1,0 +1,43 @@
+#version 430 core
+
+layout(local_size_x = 128) in;
+
+struct PhysicalVortex {
+    vec4 position_age;   // xyz: world pos, w: age (0.0 to 1.0)
+    vec4 axis_strength;  // xyz: axis, w: strength Gamma
+    vec4 attr;           // x: core sigma, y: decay rate, z: turbulence, w: unused
+};
+
+layout(std430, binding = 0) buffer VortexBuffer {
+    PhysicalVortex vortices[];
+};
+
+uniform float u_dt;
+uniform vec3 u_globalWind;
+uniform int u_maxVortices;
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= u_maxVortices) return;
+
+    if (vortices[idx].position_age.w <= 0.0) return;
+
+    // 1. Advection by global wind
+    vec3 pos = vortices[idx].position_age.xyz;
+    pos += u_globalWind * u_dt;
+    vortices[idx].position_age.xyz = pos;
+
+    // 2. Viscous and temporal decay (Lamb-Oseen model)
+    float age = vortices[idx].position_age.w;
+    age -= u_dt * 0.05; // 20 seconds max life
+    vortices[idx].position_age.w = age;
+
+    float gamma = vortices[idx].axis_strength.w;
+    gamma *= exp(-u_dt * vortices[idx].attr.y); // Strength decay
+    vortices[idx].axis_strength.w = gamma;
+
+    float sigma = vortices[idx].attr.x;
+    // Nu_air is approx 1.5e-5, but for simulation scale we use higher
+    sigma = sqrt(sigma * sigma + 4.0 * 0.005 * u_dt); 
+    vortices[idx].attr.x = sigma;
+}

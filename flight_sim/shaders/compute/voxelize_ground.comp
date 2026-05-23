@@ -1,0 +1,22 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(r8ui, binding = 1) uniform uimage3D solid_img;
+
+uniform vec3 gridMin;
+uniform vec3 gridMax;
+uniform float groundZ;
+
+void main() {
+    ivec3 pos = ivec3(gl_GlobalInvocationID);
+    ivec3 size = imageSize(solid_img);
+    if (pos.x >= size.x || pos.y >= size.y || pos.z >= size.z) return;
+
+    vec3 worldPos = gridMin + (vec3(pos) / vec3(size)) * (gridMax - gridMin);
+    
+    // Voxelize everything below groundZ
+    if (worldPos.z <= groundZ) {
+        imageStore(solid_img, pos, uvec4(1));
+    }
+}

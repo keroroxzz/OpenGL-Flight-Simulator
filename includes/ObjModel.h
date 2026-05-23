@@ -80,6 +80,7 @@ private:
 	GLfloat* pVerts, * pTxd, * pNorm;
 	GLushort* pInd;
 	GLuint VBO[4] = { 0 };
+    GLuint triSSBO = 0;
 
 	ObjModel() :isHidden(false), n_Tri(0), offset_x(0.0), offset_y(0.0), list(0), pVerts(nullptr), pNorm(nullptr), pInd(nullptr) {}
 	bool LoadObj(const char* pPathname, float scale_x, float scale_y, float scale_z);
@@ -97,6 +98,7 @@ public:
     GLushort* getIndices() const { return pInd; }
     GLfloat* getVertices() const { return pVerts; }
     GLfloat* getNormals() const { return pNorm; }
+    GLuint getTriSSBO();
 
     M3DVector3f minBound, maxBound;
     void getBounds(M3DVector3f minOut, M3DVector3f maxOut) {

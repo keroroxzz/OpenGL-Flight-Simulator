@@ -1,0 +1,30 @@
+#version 430 core
+
+layout(local_size_x = 256) in;
+
+struct Particle {
+    vec4 pos_life; // xyz = pos, w = life
+    vec4 vel_vort; // xyz = vel, w = vort
+};
+
+layout(std430, binding = 0) buffer particle_buf {
+    Particle particles[];
+};
+
+uniform float iTime;
+uniform uint numParticles;
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= numParticles) return;
+
+    float angle = iTime * 2.0 + (float(idx) / float(numParticles)) * 6.28318 * 100.0;
+    float radius = 5.0 + sin(iTime + float(idx)*0.01) * 2.0;
+    
+    vec3 oldPos = particles[idx].pos_life.xyz;
+    vec3 newPos = vec3(cos(angle) * radius, sin(angle) * radius, sin(angle * 0.5) * 2.0);
+    
+    particles[idx].pos_life = vec4(newPos, 1.0);
+    // Set velocity for the line tail calculation in vertex shader
+    particles[idx].vel_vort = vec4((newPos - oldPos) / 0.016, 0.5); 
+}

@@ -95,74 +95,6 @@ void F22::drawFlowField(M3DMatrix44f cvmatrix)
     M3DMatrix44f mvp;
     m3dMatrixMultiply44(mvp, projection, cvmatrix);
     gpuFluidSolver->drawParticles(mvp);
-
-    flowField->draw(cvmatrix, plane->wvel);
-}
-
-void F22::drawSlice(M3DMatrix44f cvmatrix, Shader* sliceShader)
-{
-    if (!sliceShader) return;
-
-    GLuint tex = gpuFluidSolver->getVelocityTexture();
-
-    glPushMatrix();
-    glLoadMatrixf(cvmatrix);
-    glMultMatrixf(plane->waxis);
-
-    sliceShader->use();
-    
-    M3DMatrix44f sliceMat;
-    glPushMatrix();
-    glLoadIdentity();
-    glTranslatef(sliceDist, 0, 0);
-    glRotatef(sliceRoll, 1, 0, 0);
-    glRotatef(slicePitch, 0, 1, 0);
-    glGetFloatv(GL_MODELVIEW_MATRIX, sliceMat);
-    glPopMatrix();
-
-    sliceShader->setUniform("sliceMatrix", UNI_MATRIX_4, &sliceMat[0]);
-    
-    M3DVector3f gMin, gMax;
-    gpuFluidSolver->getGridBounds(gMin, gMax);
-    sliceShader->setUniform("gridMin", UNI_VEC_3, gMin);
-    sliceShader->setUniform("gridMax", UNI_VEC_3, gMax);
-    
-    float speed = m3dGetMagnitude(plane->wvel);
-    sliceShader->setUniform("speedScale", UNI_FLOAT_1, &speed, 1);
-
-    glTranslatef(sliceDist, 0, 0);
-    glRotatef(sliceRoll, 1, 0, 0);
-    glRotatef(slicePitch, 0, 1, 0);
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_3D, tex);
-    sliceShader->setUniform("fluidTex", UNI_TEXTURE, nullptr, 1, GL_FALSE, 0);
-
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDisable(GL_LIGHTING);
-
-    glBegin(GL_QUADS);
-    glVertex3f(0, -30, -30);
-    glVertex3f(0,  30, -30);
-    glVertex3f(0,  30,  30);
-    glVertex3f(0, -30,  30);
-    glEnd();
-
-    glUseProgram(0);
-    glDisable(GL_BLEND);
-    glPopMatrix();
-}
-
-void F22::rotateSlice(float roll, float pitch)
-{
-    sliceRoll += roll;
-    slicePitch += pitch;
-}
-
-void F22::moveSlice(float forward)
-{
-    sliceDist += forward;
 }
 
 void F22::visualize(M3DMatrix44f cvmatrix)
@@ -202,15 +134,42 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
     m3dLoadIdentity44(identity);
     plane->getLocalBounds(bboxMin, bboxMax, identity);
 
-    bboxMin[0] -= 15.0f; bboxMax[0] += 5.0f;
-    bboxMin[1] -= 4.0f; bboxMax[1] += 4.0f;
-    bboxMin[2] -= 4.0f; bboxMax[2] += 4.0f;
+    bboxMin[0] -= 15.0f; bboxMax[0] += 10.0f;
+    bboxMin[1] -= 6.0f; bboxMax[1] += 6.0f;
+    bboxMin[2] -= 6.0f; bboxMax[2] += 6.0f;
+    
+    float groundZ = 0.0f;
+    if (plane->wpos[2] + bboxMin[2] < groundZ + 2.0f) {
+        bboxMin[2] = groundZ - plane->wpos[2];
+    }
 
     fluidSolver->setGridBounds(bboxMin, bboxMax);
-    gpuFluidSolver->setGridBounds(bboxMin, bboxMax);
+
+    // Calculate local wind in lattice units for proper grid shift initialization
+    // REFACTOR: Grid is world-axis aligned. 
+    M3DVector3f relWindPhys;
+    extern M3DVector3f windVelocity;
+    m3dSubtractVectors3(relWindPhys, windVelocity, plane->wvel);
+
+    M3DVector3f localWindLattice = { 0.0f, 0.0f, 0.0f };
+    float dx_lbm = 0.25f;
+    float dt_lbm = 0.001f;
+    float u_scale = dt_lbm / dx_lbm;
+    localWindLattice[0] = relWindPhys[0] * u_scale;
+    localWindLattice[1] = relWindPhys[1] * u_scale;
+    localWindLattice[2] = relWindPhys[2] * u_scale;
+    for (int i = 0; i < 3; i++) {
+        if (localWindLattice[i] > 0.15f) localWindLattice[i] = 0.15f;
+        if (localWindLattice[i] < -0.15f) localWindLattice[i] = -0.15f;
+    }
+
+    gpuFluidSolver->setGridBounds(bboxMin, bboxMax, localWindLattice);
     m3dCopyVector3(gridOrigin, plane->wpos);
     
-    // Voxelize aircraft parts
+    if (plane->wpos[2] + bboxMin[2] <= groundZ + 0.1f) {
+        gpuFluidSolver->voxelizeGround(groundZ);
+    }
+
     gpuFluidSolver->voxelizePart(body_o, plane->waxis);
     gpuFluidSolver->voxelizePart(aileronL_o, aileronL->waxis);
     gpuFluidSolver->voxelizePart(aileronR_o, aileronR->waxis);
@@ -228,25 +187,27 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
 	{
 		plane->updatePositionVelocity(plane);
         m3dInvertMatrix44(invWaxis, plane->waxis);
-
-        if (windTunnel && wind) {
-            m3dCopyVector3(plane->wvel, wind);
-        }
-
+        if (windTunnel && wind) m3dCopyVector3(plane->wvel, wind);
         plane->applyCFDAerodynamics(plane, false, nullptr, fluidSolver, gridOrigin, invWaxis);
-        for(auto child : plane->children) {
-             child->getChild()->applyCFDAerodynamics(plane, false, nullptr, fluidSolver, gridOrigin, invWaxis);
-        }
+        for(auto child : plane->children) child->getChild()->applyCFDAerodynamics(plane, false, nullptr, fluidSolver, gridOrigin, invWaxis);
 
         if (!windTunnel) {
             thruster->applyEffect(plane);
             M3DVector3f gravity = { 0.0,0.0,-12000.0 * 9.81 };
             plane->applyForce(gravity);
-            
-            // Apply GPU CFD correction force (Phase 6)
             M3DVector3f* cfdF = gpuFluidSolver->getCFDForce();
-            plane->applyForce(*cfdF);
-
+            
+            // NaN Safety check
+            if (std::isnan((*cfdF)[0]) || std::isnan((*cfdF)[1]) || std::isnan((*cfdF)[2])) {
+                printf("[Plane] CFD Force is NaN! Resetting aircraft position...\n");
+                M3DVector3f zero = {0,0,0};
+                plane->setPostion(0,0,10); // Reset to some safe height
+                m3dCopyVector3(plane->wvel, zero);
+                m3dCopyVector3(plane->velocity, zero);
+                m3dCopyVector3(plane->angular_velocity, zero);
+            } else {
+                plane->applyForce(*cfdF);
+            }
             plane->updateDynamic();
         } else {
             plane->velocity[0] = plane->velocity[1] = plane->velocity[2] = 0.0f;
@@ -270,17 +231,44 @@ void F22::thrustControl(float v)
 	throttle = thruster->setThrust(t, 0.3);
 }
 
-void F22::setPosition(M3DVector3f pos)
-{
-	plane->setPostion(pos[0], pos[1], pos[2]);
-}
+void F22::setPosition(M3DVector3f pos) { plane->setPostion(pos[0], pos[1], pos[2]); }
+void F22::setDisplacement(M3DVector3f d) { M3DVector3f pos; getPosition(pos); m3dAddVectors3(pos, pos, d); setPosition(pos); }
 
-void F22::setDisplacement(M3DVector3f displacement)
+void F22::updateLBMTest(M3DVector3f wind)
 {
-	M3DVector3f pos;
-	getPosition(pos);
-	m3dAddVectors3(pos, pos, displacement);
-	setPosition(pos);
+    extern float dt;
+    static int fluidUpdateCounter = 0;
+    static int totalIterations = 0;
+    extern float sim_time;
+
+    gpuFluidSolver->clearSolid();
+    M3DVector3f bboxMin = { -15.0f, -10.0f, -10.0f };
+    M3DVector3f bboxMax = { 15.0f, 10.0f, 10.0f };
+    gpuFluidSolver->setGridBounds(bboxMin, bboxMax);
+
+    // BREAK SYMMETRY
+    M3DVector3f center = { 0.01f, 0.02f, 0.0f };
+    gpuFluidSolver->voxelizeCylinder(center, 1.5f, 20.0f, 2);
+
+    M3DVector3f noisyWind;
+    m3dCopyVector3(noisyWind, wind);
+    noisyWind[1] += sin(sim_time * 5.0f) * 0.2f;
+    noisyWind[2] += cos(sim_time * 7.0f) * 0.2f;
+
+    M3DVector3f dummyVel = { -noisyWind[0], -noisyWind[1], -noisyWind[2] };
+    M3DMatrix44f identity;
+    m3dLoadIdentity44(identity);
+
+    fluidUpdateCounter++;
+    if (fluidUpdateCounter >= 2) {
+        gpuFluidSolver->step(dt * 2.0f, dummyVel, identity, center, sim_time);
+        fluidUpdateCounter = 0;
+        totalIterations++;
+        M3DVector3f* force = gpuFluidSolver->getCFDForce();
+        if (std::isnan((*force)[0])) exit(1);
+        if (totalIterations % 50 == 0) printf("[LBM Test] Iteration %d: Force = [%.2f, %.2f, %.2f]\n", totalIterations, (*force)[0], (*force)[1], (*force)[2]);
+        if (totalIterations >= 2000) exit(0);
+    }
 }
 
 void F22::getPosition(M3DVector3f pos) { m3dCopyVector3(pos, plane->position); }

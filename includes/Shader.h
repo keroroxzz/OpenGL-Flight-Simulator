@@ -3,6 +3,8 @@
 #include "baseHeader.h"
 
 #define UNI_INT_1 -1
+#define UNI_INT_2 -2
+#define UNI_INT_3 -3
 #define UNI_FLOAT_1 0
 #define UNI_VEC_1   1
 #define UNI_VEC_2   2

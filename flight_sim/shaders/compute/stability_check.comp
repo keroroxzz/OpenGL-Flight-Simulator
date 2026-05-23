@@ -1,0 +1,40 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(std430, binding = 0) buffer f_buf { float f[]; };
+layout(std430, binding = 1) buffer error_buf { uint has_error; };
+
+uniform ivec3 size;
+
+const float w[19] = float[](
+    1.0/3.0,
+    1.0/18.0, 1.0/18.0, 1.0/18.0, 1.0/18.0, 1.0/18.0, 1.0/18.0,
+    1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0,
+    1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0,
+    1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0
+);
+
+void main() {
+    ivec3 pos = ivec3(gl_GlobalInvocationID);
+    if (pos.x >= size.x || pos.y >= size.y || pos.z >= size.z) return;
+
+    int idx = (pos.z * size.y * size.x + pos.y * size.x + pos.x);
+    int stride = size.x * size.y * size.z;
+
+    bool invalid = false;
+    for (int i = 0; i < 19; i++) {
+        float fi = f[i * stride + idx];
+        if (isnan(fi) || isinf(fi) || fi < -100.0 || fi > 100.0) {
+            invalid = true;
+            break;
+        }
+    }
+
+    if (invalid) {
+        atomicExchange(has_error, 1);
+        for (int i = 0; i < 19; i++) {
+            f[i * stride + idx] = w[i];
+        }
+    }
+}
