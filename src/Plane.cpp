@@ -78,6 +78,7 @@ F22::F22()
 
     flowField = new FlowField(1000);
     fluidSolver = new FluidSolver(32, 24, 24);
+    gpuFluidSolver = new GPUFluidSolver(96, 96, 96);
     m3dCopyVector3(gridOrigin, plane->wpos);
 
 	plane->updatePositionVelocity(plane);
@@ -90,6 +91,11 @@ void F22::display(M3DMatrix44f cvmatrix, GLint model_view_loc)
 
 void F22::drawFlowField(M3DMatrix44f cvmatrix)
 {
+    extern M3DMatrix44f projection;
+    M3DMatrix44f mvp;
+    m3dMatrixMultiply44(mvp, projection, cvmatrix);
+    gpuFluidSolver->drawParticles(mvp);
+
     flowField->draw(cvmatrix, plane->wvel);
 }
 
@@ -97,7 +103,7 @@ void F22::drawSlice(M3DMatrix44f cvmatrix, Shader* sliceShader)
 {
     if (!sliceShader) return;
 
-    GLuint tex = fluidSolver->get3DTexture();
+    GLuint tex = gpuFluidSolver->getVelocityTexture();
 
     glPushMatrix();
     glLoadMatrixf(cvmatrix);
@@ -117,7 +123,7 @@ void F22::drawSlice(M3DMatrix44f cvmatrix, Shader* sliceShader)
     sliceShader->setUniform("sliceMatrix", UNI_MATRIX_4, &sliceMat[0]);
     
     M3DVector3f gMin, gMax;
-    fluidSolver->getGridBounds(gMin, gMax);
+    gpuFluidSolver->getGridBounds(gMin, gMax);
     sliceShader->setUniform("gridMin", UNI_VEC_3, gMin);
     sliceShader->setUniform("gridMax", UNI_VEC_3, gMax);
     
@@ -188,6 +194,7 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
     static int fluidUpdateCounter = 0;
     
     fluidSolver->clearSolid();
+    gpuFluidSolver->clearSolid();
 
     M3DVector3f bboxMin = { 1e10f, 1e10f, 1e10f };
     M3DVector3f bboxMax = { -1e10f, -1e10f, -1e10f };
@@ -200,7 +207,19 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
     bboxMin[2] -= 4.0f; bboxMax[2] += 4.0f;
 
     fluidSolver->setGridBounds(bboxMin, bboxMax);
+    gpuFluidSolver->setGridBounds(bboxMin, bboxMax);
     m3dCopyVector3(gridOrigin, plane->wpos);
+    
+    // Voxelize aircraft parts
+    gpuFluidSolver->voxelizePart(body_o, plane->waxis);
+    gpuFluidSolver->voxelizePart(aileronL_o, aileronL->waxis);
+    gpuFluidSolver->voxelizePart(aileronR_o, aileronR->waxis);
+    gpuFluidSolver->voxelizePart(flapL_o, flapL->waxis);
+    gpuFluidSolver->voxelizePart(flapR_o, flapR->waxis);
+    gpuFluidSolver->voxelizePart(rudder_o, rudderL->waxis);
+    gpuFluidSolver->voxelizePart(rudder_o, rudderR->waxis);
+    gpuFluidSolver->voxelizePart(elevatorL_o, elevatorL->waxis);
+    gpuFluidSolver->voxelizePart(elevatorR_o, elevatorR->waxis);
 
     M3DMatrix44f invWaxis;
     m3dInvertMatrix44(invWaxis, plane->waxis);
@@ -232,7 +251,9 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
 
     fluidUpdateCounter++;
     if (fluidUpdateCounter >= 10) {
+        extern float sim_time;
         fluidSolver->step(dt * 10.0f, plane->wvel, plane->waxis);
+        gpuFluidSolver->step(dt * 10.0f, plane->wvel, plane->waxis, plane->wpos, sim_time);
         fluidUpdateCounter = 0;
     }
     flowField->update(dt, plane->wpos, plane->wvel, plane->waxis, invWaxis, fluidSolver);

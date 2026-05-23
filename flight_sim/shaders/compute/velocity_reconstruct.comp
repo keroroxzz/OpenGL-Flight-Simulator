@@ -1,0 +1,41 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(std430, binding = 0) buffer f_in_buf { float f_in[]; };
+layout(rgba16f, binding = 1) uniform writeonly image3D velocity_img;
+
+const vec3 c[19] = vec3[](
+    vec3(0,0,0),
+    vec3(1,0,0), vec3(-1,0,0), vec3(0,1,0), vec3(0,-1,0), vec3(0,0,1), vec3(0,0,-1),
+    vec3(1,1,0), vec3(-1,-1,0), vec3(1,-1,0), vec3(-1,1,0),
+    vec3(1,0,1), vec3(-1,0,-1), vec3(1,0,-1), vec3(-1,0,1),
+    vec3(0,1,1), vec3(0,-1,-1), vec3(0,1,-1), vec3(0,-1,1)
+);
+
+void main() {
+    ivec3 pos = ivec3(gl_GlobalInvocationID);
+    ivec3 size = imageSize(velocity_img);
+    if (pos.x >= size.x || pos.y >= size.y || pos.z >= size.z) return;
+
+    int idx = (pos.z * size.y * size.x + pos.y * size.x + pos.x);
+    int stride = size.x * size.y * size.z;
+
+    float rho = 0.0;
+    vec3 u = vec3(0.0);
+
+    for (int i = 0; i < 19; i++) {
+        float fi = f_in[i * stride + idx];
+        rho += fi;
+        u += fi * c[i];
+    }
+
+    if (rho > 0.0) {
+        u /= rho;
+    } else {
+        rho = 1.0;
+        u = vec3(0.0);
+    }
+
+    imageStore(velocity_img, pos, vec4(u, rho));
+}

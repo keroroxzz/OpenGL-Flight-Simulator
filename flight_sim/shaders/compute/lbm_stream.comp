@@ -1,0 +1,69 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(std430, binding = 0) buffer f_in_buf { float f_in[]; };
+layout(std430, binding = 1) buffer f_out_buf { float f_out[]; };
+
+layout(r8ui, binding = 3) uniform readonly uimage3D solid_img;
+
+uniform vec3 u_wind;
+
+const ivec3 c[19] = ivec3[](
+    ivec3(0,0,0),
+    ivec3(1,0,0), ivec3(-1,0,0), ivec3(0,1,0), ivec3(0,-1,0), ivec3(0,0,1), ivec3(0,0,-1),
+    ivec3(1,1,0), ivec3(-1,-1,0), ivec3(1,-1,0), ivec3(-1,1,0),
+    ivec3(1,0,1), ivec3(-1,0,-1), ivec3(1,0,-1), ivec3(-1,0,1),
+    ivec3(0,1,1), ivec3(0,-1,-1), ivec3(0,1,-1), ivec3(0,-1,1)
+);
+
+const float w[19] = float[](
+    1.0/3.0,
+    1.0/18.0, 1.0/18.0, 1.0/18.0, 1.0/18.0, 1.0/18.0, 1.0/18.0,
+    1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0,
+    1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0,
+    1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0
+);
+
+const int opposite[19] = int[](0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15, 18, 17);
+
+void main() {
+    ivec3 pos = ivec3(gl_GlobalInvocationID);
+    ivec3 size = imageSize(solid_img);
+    if (pos.x >= size.x || pos.y >= size.y || pos.z >= size.z) return;
+
+    int idx = (pos.z * size.y * size.x + pos.y * size.x + pos.x);
+    int stride = size.x * size.y * size.z;
+
+    if (imageLoad(solid_img, pos).r != 0) return;
+
+    // Handle inflow at NX-1
+    if (pos.x == size.x - 1) {
+        float rho = 1.0;
+        float u2 = dot(u_wind, u_wind);
+        for (int i = 0; i < 19; i++) {
+            float cu = dot(vec3(c[i]), u_wind);
+            f_in[i * stride + idx] = w[i] * rho * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
+        }
+        return;
+    }
+
+    for (int i = 0; i < 19; i++) {
+        ivec3 prev_pos = pos - c[i];
+
+        if (prev_pos.x < 0 || prev_pos.x >= size.x || 
+            prev_pos.y < 0 || prev_pos.y >= size.y || 
+            prev_pos.z < 0 || prev_pos.z >= size.z) {
+
+            // Simple outlet at X=0 or walls at others
+            f_in[i * stride + idx] = f_out[i * stride + idx];
+        } else if (imageLoad(solid_img, prev_pos).r != 0) {
+            // Bounce-back from solid
+            f_in[i * stride + idx] = f_out[opposite[i] * stride + idx];
+        } else {
+            int prev_idx = (prev_pos.z * size.y * size.x + prev_pos.y * size.x + prev_pos.x);
+            f_in[i * stride + idx] = f_out[i * stride + prev_idx];
+        }
+    }
+}
+

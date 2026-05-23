@@ -790,7 +790,14 @@ int main(int argc, char* argv[])
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
     glutInitWindowSize(windowWidth, windowHeight);
+    
+    // Request OpenGL 4.6 Compatibility Profile
+    glutInitContextVersion(4, 6);
+    glutInitContextProfile(GLUT_COMPATIBILITY_PROFILE);
+
     glutCreateWindow("Fight Simulator - alpha");
+
+    glewInit();
 
     ReloadShaders(false);
 

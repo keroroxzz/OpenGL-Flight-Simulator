@@ -1,0 +1,81 @@
+#version 430 core
+
+layout(local_size_x = 256) in;
+
+struct Particle {
+    vec4 pos_life; // xyz = pos, w = normalized life
+    vec4 vel_maxLife; // xyz = vel, w = maxLife
+};
+
+layout(std430, binding = 0) buffer particle_buf {
+    Particle particles[];
+};
+
+layout(rgba16f, binding = 1) uniform readonly image3D velocity_img;
+layout(r8ui, binding = 2) uniform readonly uimage3D solid_img;
+
+uniform float dt;
+uniform vec3 gridMin;
+uniform vec3 gridMax;
+uniform vec3 spawnPos; // Center of spawn area (e.g. in front of aircraft)
+uniform vec3 spawnRange;
+uniform float iTime;
+
+uint hash(uint x) {
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = (x >> 16) ^ x;
+    return x;
+}
+
+float random(uint seed) {
+    return float(hash(seed)) / 4294967296.0;
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= particles.length()) return;
+
+    Particle p = particles[idx];
+    
+    // Update life
+    float life = p.pos_life.w * p.vel_maxLife.w;
+    life -= dt;
+    
+    bool respawn = (life <= 0.0);
+    
+    // Check if out of grid bounds
+    vec3 localPos = (p.pos_life.xyz - gridMin) / (gridMax - gridMin);
+    if (localPos.x < 0.0 || localPos.x > 1.0 || 
+        localPos.y < 0.0 || localPos.y > 1.0 || 
+        localPos.z < 0.0 || localPos.z > 1.0) {
+        respawn = true;
+    }
+
+    if (respawn) {
+        uint seed = idx + uint(iTime * 1000.0);
+        vec3 randOffset = vec3(random(seed), random(seed + 1), random(seed + 2)) - 0.5;
+        p.pos_life.xyz = spawnPos + randOffset * spawnRange;
+        p.vel_maxLife.w = 0.5 + random(seed + 3) * 1.0; // maxLife
+        p.pos_life.w = 1.0; // normalized life
+        p.vel_maxLife.xyz = vec3(0.0);
+    } else {
+        // Advection (RK2)
+        ivec3 size = imageSize(velocity_img);
+        vec3 uvw = (p.pos_life.xyz - gridMin) / (gridMax - gridMin);
+        
+        // Simple Euler for now, upgrade to RK2 later
+        vec3 v = imageLoad(velocity_img, ivec3(uvw * vec3(size))).xyz;
+        
+        // Check solid
+        if (imageLoad(solid_img, ivec3(uvw * vec3(size))).r != 0) {
+            p.pos_life.w = 0.0; // Kill it
+        } else {
+            p.pos_life.xyz += v * dt;
+            p.vel_maxLife.xyz = v;
+            p.pos_life.w = life / p.vel_maxLife.w;
+        }
+    }
+
+    particles[idx] = p;
+}

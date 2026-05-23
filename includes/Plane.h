@@ -5,6 +5,7 @@
 #include "Joints.h"
 #include "FlowField.h"
 #include "FluidSolver.h"
+#include "GPUFluidSolver.h"
 #include "Shader.h"
 
 class F22
@@ -21,6 +22,7 @@ class F22
 	Thruster *thruster;
     FlowField *flowField;
     FluidSolver *fluidSolver;
+    GPUFluidSolver *gpuFluidSolver;
     M3DVector3f gridOrigin;
 
     float sliceRoll = 0.0f, slicePitch = 90.0f, sliceDist = 5.0f;
