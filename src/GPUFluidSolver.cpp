@@ -148,7 +148,7 @@ void GPUFluidSolver::step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxi
 
 void GPUFluidSolver::debugUniformVelocity(M3DVector3f vel) {
     if (!debugUniformVelShader) return;
-    debugUniformVelShader->use(); glBindImageTexture(1, velocityTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+    debugUniformVelShader->use(); glBindImageTexture(1, velocityTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
     debugUniformVelShader->setUniform("u_vel", UNI_VEC_3, vel); glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
 }
 
@@ -168,8 +168,8 @@ void GPUFluidSolver::resetParticles() {
 void GPUFluidSolver::dispatchCollision() {
     if (!collisionShader) return; collisionShader->use();
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, f_in_SSBO); glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, f_out_SSBO);
-    glBindImageTexture(2, velocityTexture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA16F);
-    glBindImageTexture(3, solidTexture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_R8UI);
+    glBindImageTexture(2, velocityTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_RGBA16F);
+    glBindImageTexture(3, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
     float tau = 0.51f, Smag = 0.12f;
     collisionShader->setUniform("tau", UNI_FLOAT_1, &tau); collisionShader->setUniform("SmagorinskyConstant", UNI_FLOAT_1, &Smag);
     glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
@@ -178,13 +178,13 @@ void GPUFluidSolver::dispatchCollision() {
 void GPUFluidSolver::dispatchStream() {
     if (!streamShader) return; streamShader->use();
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, f_in_SSBO); glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, f_out_SSBO);
-    glBindImageTexture(3, solidTexture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_R8UI);
+    glBindImageTexture(3, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
     glDispatchCompute(NX/8, NY / 8, NZ / 8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
 }
 
 void GPUFluidSolver::dispatchReconstruct() {
     if (!reconstructShader) return; reconstructShader->use();
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, f_in_SSBO); glBindImageTexture(1, velocityTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, f_in_SSBO); glBindImageTexture(1, velocityTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
     float v_inv_scale = 250.0f; reconstructShader->setUniform("v_scale", UNI_FLOAT_1, &v_inv_scale);
     glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
 }
@@ -194,7 +194,7 @@ void GPUFluidSolver::dispatchParticleAdvect(float dt, M3DVector3f planePos_arg, 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleSSBO);
     glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_3D, velocityTexture);
     GLint samplerLoc = glGetUniformLocation(particleAdvectShader->getProgram(), "velocity_tex"); glUniform1i(samplerLoc, 0);
-    glBindImageTexture(2, solidTexture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_R8UI);
+    glBindImageTexture(2, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
     M3DVector3f worldGridMin, worldGridMax; m3dAddVectors3(worldGridMin, planePos_arg, gridMin); m3dAddVectors3(worldGridMax, planePos_arg, gridMax);
     particleAdvectShader->setUniform("dt", UNI_FLOAT_1, &dt); particleAdvectShader->setUniform("gridMin", UNI_VEC_3, worldGridMin); particleAdvectShader->setUniform("gridMax", UNI_VEC_3, worldGridMax);
     M3DVector3f spawnPos; m3dCopyVector3(spawnPos, planePos_arg); spawnPos[0] += gridMin[0] + 0.5f; 
@@ -207,7 +207,7 @@ void GPUFluidSolver::dispatchParticleAdvect(float dt, M3DVector3f planePos_arg, 
 void GPUFluidSolver::dispatchForceCompute() {
     if (!forceComputeShader) return; forceComputeShader->use();
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, f_in_SSBO); glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, f_out_SSBO);
-    glBindImageTexture(3, solidTexture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_R8UI);
+    glBindImageTexture(3, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, forceSSBO);
     int zero[4] = {0,0,0,0}; glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 16, zero);
     glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
@@ -219,8 +219,8 @@ void GPUFluidSolver::dispatchForceCompute() {
 
 void GPUFluidSolver::dispatchWakeExtract(float dt, M3DMatrix44f planeWaxis, M3DVector3f planePos) {
     if (!wakeExtractShader) return; wakeExtractShader->use();
-    glBindImageTexture(1, velocityTexture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA16F);
-    glBindImageTexture(2, solidTexture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_R8UI);
+    glBindImageTexture(1, velocityTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_RGBA16F);
+    glBindImageTexture(2, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, wakeCandidateSSBO); glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, wakeCounterBuffer);
     uint32_t zero_cnt = 0; glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 4, &zero_cnt);
     M3DVector3f worldGridMin, worldGridMax; m3dAddVectors3(worldGridMin, planePos, gridMin); m3dAddVectors3(worldGridMax, planePos, gridMax);
@@ -243,7 +243,7 @@ void GPUFluidSolver::dispatchWakeInject(M3DVector3f planePos) {
         if (gpuVortices.size() >= 1024) break;
     }
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeSSBO); glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, gpuVortices.size()*48, gpuVortices.data());
-    wakeInjectShader->use(); glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, wakeSSBO); glBindImageTexture(1, velocityTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA16F);
+    wakeInjectShader->use(); glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, wakeSSBO); glBindImageTexture(1, velocityTexture, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA16F);
     unsigned int count = (unsigned int)gpuVortices.size(); wakeInjectShader->setUniform("numVortices", UNI_INT_1, &count);
     M3DVector3f worldGridMin, worldGridMax; m3dAddVectors3(worldGridMin, planePos, gridMin); m3dAddVectors3(worldGridMax, planePos, gridMax);
     wakeInjectShader->setUniform("gridMin", UNI_VEC_3, worldGridMin); wakeInjectShader->setUniform("gridMax", UNI_VEC_3, worldGridMax);
@@ -274,7 +274,7 @@ void GPUFluidSolver::clearSolid() {
 void GPUFluidSolver::voxelizePart(ObjModel* model, M3DMatrix44f worldTransform) {
     if (!voxelizeShader || !model) return;
     GLuint triSSBO = model->getTriSSBO(); glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, triSSBO);
-    voxelizeShader->use(); glBindImageTexture(1, solidTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_R8UI);
+    voxelizeShader->use(); glBindImageTexture(1, solidTexture, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R8UI);
     voxelizeShader->setUniform("gridMin", UNI_VEC_3, gridMin); voxelizeShader->setUniform("gridMax", UNI_VEC_3, gridMax);
     unsigned int nTri = (unsigned int)(model->getNumIndices() / 3); voxelizeShader->setUniform("numTriangles", UNI_INT_1, &nTri);
     voxelizeShader->setUniform("modelMatrix", UNI_MATRIX_4, &worldTransform[0]);
@@ -285,7 +285,7 @@ void GPUFluidSolver::voxelizeAircraft(F22* aircraft) {}
 
 void GPUFluidSolver::voxelizeCylinder(M3DVector3f center, float radius, float height, int axis) {
     if (!voxelizeCylinderShader) return;
-    voxelizeCylinderShader->use(); glBindImageTexture(1, solidTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_R8UI);
+    voxelizeCylinderShader->use(); glBindImageTexture(1, solidTexture, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R8UI);
     voxelizeCylinderShader->setUniform("gridMin", UNI_VEC_3, gridMin); voxelizeCylinderShader->setUniform("gridMax", UNI_VEC_3, gridMax);
     voxelizeCylinderShader->setUniform("center", UNI_VEC_3, center);
     voxelizeCylinderShader->setUniform("radius", UNI_FLOAT_1, &radius); voxelizeCylinderShader->setUniform("height", UNI_FLOAT_1, &height);
@@ -295,7 +295,7 @@ void GPUFluidSolver::voxelizeCylinder(M3DVector3f center, float radius, float he
 
 void GPUFluidSolver::voxelizeGround(float groundZ) {
     if (!voxelizeGroundShader) return;
-    voxelizeGroundShader->use(); glBindImageTexture(1, solidTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_R8UI);
+    voxelizeGroundShader->use(); glBindImageTexture(1, solidTexture, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R8UI);
     voxelizeGroundShader->setUniform("gridMin", UNI_VEC_3, gridMin); voxelizeGroundShader->setUniform("gridMax", UNI_VEC_3, gridMax);
     voxelizeGroundShader->setUniform("groundZ", UNI_FLOAT_1, &groundZ);
     glDispatchCompute(NX / 8, NY / 8, NZ / 8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
