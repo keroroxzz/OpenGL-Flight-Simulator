@@ -70,12 +70,9 @@ void GPUFluidSolver::initShaders() {
     reconstructShader = new Shader(1); reconstructShader->addFromFile("shaders/compute/velocity_reconstruct.comp", GL_COMPUTE_SHADER);
     particleAdvectShader = new Shader(1); particleAdvectShader->addFromFile("shaders/compute/particle_advect.comp", GL_COMPUTE_SHADER);
     
-    const char* vsSource = "#version 430 core\nstruct Particle { vec4 pos_life; vec4 vel_vort; };\nlayout(std430, binding = 0) buffer p_buf { Particle particles[]; };\nuniform mat4 modelViewProj;\nout vec4 vColor;\nvoid main() {\n  Particle p = particles[gl_VertexID];\n  float alpha = p.pos_life.w;\n  if (alpha <= 0.01) { gl_Position = vec4(0,0,0,0); return; }\n  gl_Position = modelViewProj * vec4(p.pos_life.xyz, 1.0);\n  float vort = p.vel_vort.w;\n  if (vort < -50.0) vColor = vec4(1,0,0,1); \n  else vColor = vec4(0.2, 0.8, 1.0, alpha); \n}\n";
-    const char* fsSource = "#version 430 core\nin vec4 vColor; out vec4 color; void main() { color = vColor; }\n";
-    GLuint vs = glCreateShader(GL_VERTEX_SHADER); glShaderSource(vs, 1, &vsSource, NULL); glCompileShader(vs);
-    GLuint fs = glCreateShader(GL_FRAGMENT_SHADER); glShaderSource(fs, 1, &fsSource, NULL); glCompileShader(fs);
-    GLuint prog = glCreateProgram(); glAttachShader(prog, vs); glAttachShader(prog, fs); glLinkProgram(prog);
-    particleRenderShader = new Shader(0); particleRenderShader->setProgram(prog); 
+    particleRenderShader = new Shader(2);
+    particleRenderShader->addFromFile("shaders/vertex/particle.vs", GL_VERTEX_SHADER);
+    particleRenderShader->addFromFile("shaders/frag/particle.fs", GL_FRAGMENT_SHADER);
     
     voxelizeShader = new Shader(1); voxelizeShader->addFromFile("shaders/compute/voxelize.comp", GL_COMPUTE_SHADER);
     forceComputeShader = new Shader(1); forceComputeShader->addFromFile("shaders/compute/lbm_force.comp", GL_COMPUTE_SHADER);
@@ -106,6 +103,7 @@ void GPUFluidSolver::dispatchShift(int ox, int oy, int oz, M3DVector3f localWind
 }
 
 void GPUFluidSolver::step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxis, M3DVector3f planePos, float simTime) {
+    lastDt = dt;
     float dx = 0.25f, dt_lbm = 0.001f, u_scale = dt_lbm / dx;
     extern M3DVector3f windVelocity; M3DVector3f relWindPhys; m3dSubtractVectors3(relWindPhys, windVelocity, planeVel);
     M3DVector3f localWindLattice = { relWindPhys[0]*u_scale, relWindPhys[1]*u_scale, relWindPhys[2]*u_scale };
@@ -258,8 +256,12 @@ void GPUFluidSolver::drawParticles(M3DMatrix44f mvp) {
     GLuint prog = particleRenderShader->getProgram();
     GLint mvpLoc = glGetUniformLocation(prog, "modelViewProj");
     glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, mvp);
+    
+    GLint dtLoc = glGetUniformLocation(prog, "u_dt");
+    glUniform1f(dtLoc, lastDt);
+
     glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE); glDepthMask(GL_FALSE);
-    glPointSize(4.0f); glDrawArrays(GL_POINTS, 0, numParticles);
+    glDrawArrays(GL_LINES, 0, numParticles * 2);
     glDepthMask(GL_TRUE); glDisable(GL_BLEND);
 }
 

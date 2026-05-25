@@ -44,6 +44,7 @@ class GPUFluidSolver {
     M3DVector3f prevGridMin;
     M3DVector3f cfdForce = {0,0,0};
     M3DVector3f filteredForce = {0,0,0};
+    float lastDt = 0.016f;
 
 public:
     GPUFluidSolver(int nx = 96, int ny = 96, int nz = 96);

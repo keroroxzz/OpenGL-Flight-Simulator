@@ -10,7 +10,7 @@ layout(std430, binding = 0) buffer particle_buf {
 };
 
 uniform mat4 modelViewProj;
-uniform float tailLength; // Now interpreted as tail_dt (seconds)
+uniform float u_dt; // Line length proportional to dt
 
 out vec4 vColor;
 
@@ -29,7 +29,6 @@ void main() {
     }
 
     if (vort < -50.0) {
-        // NaN DIAGNOSTIC COLOR: Bright Red
         gl_Position = modelViewProj * vec4(p.pos_life.xyz, 1.0);
         vColor = vec4(1.0, 0.0, 0.0, 1.0);
         return;
@@ -37,8 +36,8 @@ void main() {
 
     vec3 pos = p.pos_life.xyz;
     if (isTail == 1) {
-        // Tail is pos - v * tail_dt
-        pos -= p.vel_vort.xyz * tailLength;
+        // Line length proportional to dt (e.g., using 5.0x multiplier for better visibility)
+        pos -= p.vel_vort.xyz * u_dt * 5.0;
     }
     
     gl_Position = modelViewProj * vec4(pos, 1.0);
@@ -47,7 +46,7 @@ void main() {
     float t_speed = clamp(length(p.vel_vort.xyz) / 40.0, 0.2, 1.0);
     
     vec3 baseColor = mix(vec3(0.0, 0.5, 1.0), vec3(0.1, 1.0, 0.8), t_speed);
-    vec3 coreColor = vec3(1.0, 1.0, 1.0); // Pure white cores
+    vec3 coreColor = vec3(1.0, 1.0, 1.0);
     
-    vColor = vec4(mix(baseColor, coreColor, t_vort), alpha * 1.0);
+    vColor = vec4(mix(baseColor, coreColor, t_vort), alpha);
 }
