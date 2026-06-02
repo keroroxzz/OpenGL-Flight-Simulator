@@ -7,8 +7,10 @@
 
 using namespace std;
 
-ObjModel::ObjModel(const char* path, float ox, float oy, float scale_x, float scale_y, float scale_z) : offset_x(ox), offset_y(oy), list(0), pVerts(nullptr), pTxd(nullptr), pNorm(nullptr), pInd(nullptr)
+ObjModel::ObjModel(const char* path, float ox, float oy, float scale_x, float scale_y, float scale_z) : offset_x(ox), offset_y(oy), list(0), pVerts(nullptr), pTxd(nullptr), pNorm(nullptr), pInd(nullptr), triSSBO(0)
 {
+    memset(VBO, 0, sizeof(VBO));
+    isHidden = false;
 	LoadObj(path, scale_x, scale_y, scale_z);
 	InitVBO();
 }
@@ -16,6 +18,7 @@ ObjModel::ObjModel(const char* path, float ox, float oy, float scale_x, float sc
 bool ObjModel::LoadObj(const char* pPathname, float scale_x, float scale_y, float scale_z)
 {
 	delete[] pVerts; delete[] pTxd; delete[] pNorm; delete[] pInd;
+    pVerts = nullptr; pTxd = nullptr; pNorm = nullptr; pInd = nullptr;
 	try
 	{
 		if (!pPathname)
@@ -192,15 +195,15 @@ void ObjModel::InitVBO()
 		glGenBuffers(4, VBO);
 
 		glBindBuffer(GL_ARRAY_BUFFER, VBO[0]);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * n_Tri * 3 * 3, pVerts, GL_STATIC_DRAW);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * n_Tri * 3, pVerts, GL_STATIC_DRAW);
 		printf("vertices,");
 
 		glBindBuffer(GL_ARRAY_BUFFER, VBO[1]);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * n_Tri * 3 * 3, pNorm, GL_STATIC_DRAW);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * n_Tri * 3, pNorm, GL_STATIC_DRAW);
 		printf("norm,");
 
 		glBindBuffer(GL_ARRAY_BUFFER, VBO[2]);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * n_Tri * 3 * 2, pTxd, GL_STATIC_DRAW);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * n_Tri * 2, pTxd, GL_STATIC_DRAW);
 		printf("txd,");
 
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, VBO[3]);
