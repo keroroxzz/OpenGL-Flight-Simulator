@@ -36,8 +36,8 @@ void main() {
 
     vec3 pos = p.pos_life.xyz;
     if (isTail == 1) {
-        // Line length proportional to dt (e.g., using 5.0x multiplier for better visibility)
-        pos -= p.vel_vort.xyz * u_dt * 5.0;
+        // Line length proportional to dt (e.g., using 50.0x multiplier for better visibility)
+        pos -= p.vel_vort.xyz * u_dt * 50.0;
     }
     
     gl_Position = modelViewProj * vec4(pos, 1.0);

@@ -3,10 +3,10 @@
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
 layout(std430, binding = 0) buffer f_in_buf { float f_in[]; };
-layout(rgba16f, binding = 1) uniform writeonly image3D velocity_img;
+layout(std430, binding = 1) buffer f_out_buf { float f_out[]; };
 layout(r8ui, binding = 3) uniform readonly uimage3D solid_img;
 
-uniform float v_scale; // To convert lattice u to physical m/s
+uniform vec3 u_vel; // Lattice velocity
 
 const vec3 c[19] = vec3[](
     vec3(0,0,0),
@@ -16,35 +16,31 @@ const vec3 c[19] = vec3[](
     vec3(0,1,1), vec3(0,-1,-1), vec3(0,1,-1), vec3(0,-1,1)
 );
 
+const float w[19] = float[](
+    1.0/3.0,
+    1.0/18.0, 1.0/18.0, 1.0/18.0, 1.0/18.0, 1.0/18.0, 1.0/18.0,
+    1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0,
+    1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0,
+    1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0
+);
+
 void main() {
     ivec3 pos = ivec3(gl_GlobalInvocationID);
-    ivec3 size = imageSize(velocity_img);
+    ivec3 size = imageSize(solid_img);
     if (pos.x >= size.x || pos.y >= size.y || pos.z >= size.z) return;
-
-    if (imageLoad(solid_img, pos).r != 0) {
-        imageStore(velocity_img, pos, vec4(0.0, 0.0, 0.0, 1.0));
-        return;
-    }
 
     int idx = (pos.z * size.y * size.x + pos.y * size.x + pos.x);
     int stride = size.x * size.y * size.z;
 
-    float rho = 0.0;
-    vec3 u_lat = vec3(0.0);
+    uint solid = imageLoad(solid_img, pos).r;
+    vec3 u = (solid == 0) ? u_vel : vec3(0.0);
+    float rho = 1.0;
 
+    float u2 = dot(u, u);
     for (int i = 0; i < 19; i++) {
-        float fi = f_in[i * stride + idx];
-        rho += fi;
-        u_lat += fi * c[i];
+        float cu = dot(c[i], u);
+        float feq = w[i] * rho * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
+        f_in[i * stride + idx] = feq;
+        f_out[i * stride + idx] = feq;
     }
-
-    if (rho > 0.01) {
-        u_lat /= rho;
-    } else {
-        rho = 1.0;
-        u_lat = vec3(0.0);
-    }
-
-    // Store physical velocity (m/s)
-    imageStore(velocity_img, pos, vec4(u_lat * v_scale, rho));
 }

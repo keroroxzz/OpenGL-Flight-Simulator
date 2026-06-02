@@ -277,7 +277,10 @@ void RenderScene(void)
     glUseProgram(0);
 
     // FINAL PASS: Render all transparent/line effects over opaque scene (sky/map/cylinder)
-    if (isShowingF22 || isLBMCylinderTest) f22->drawFlowField(model_view);
+    if (isShowingF22 || isLBMCylinderTest) {
+        f22->drawFlowField(model_view);
+        f22->drawBoundingBox(model_view);
+    }
     if (isWindTunnelMode) DrawWindArrow(model_view);
     if (isShowingForce) {
         glPushMatrix();

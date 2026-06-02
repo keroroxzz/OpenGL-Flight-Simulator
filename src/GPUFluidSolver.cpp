@@ -33,6 +33,7 @@ GPUFluidSolver::~GPUFluidSolver() {
     delete voxelizeCylinderShader; delete particleAdvectShader; delete particleRenderShader;
     delete forceComputeShader; delete wakeExtractShader; delete wakeInjectShader;
     delete stabilityShader; delete shiftShader; delete vortexPhysicsShader; delete debugUniformVelShader;
+    delete reinitShader; delete clearSolidShader;
 }
 
 void GPUFluidSolver::initBuffers() {
@@ -50,7 +51,6 @@ void GPUFluidSolver::initBuffers() {
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
     
     glGenTextures(1, &solidTexture); glBindTexture(GL_TEXTURE_3D, solidTexture); 
-    // REFACTOR: Explicitly zero out solid texture to prevent uninitialized VRAM garbage
     std::vector<uint8_t> initial_solid(size, 0);
     glTexImage3D(GL_TEXTURE_3D, 0, GL_R8UI, NX, NY, NZ, 0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, initial_solid.data());
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -60,7 +60,7 @@ void GPUFluidSolver::initBuffers() {
     glGenBuffers(1, &wakeCandidateSSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeCandidateSSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float)*8*1024, nullptr, GL_DYNAMIC_COPY);
     glGenBuffers(1, &wakeCounterBuffer); glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeCounterBuffer); glBufferData(GL_SHADER_STORAGE_BUFFER, 4, nullptr, GL_DYNAMIC_COPY);
     glGenBuffers(1, &wakeSSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeSSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float)*12*1024, nullptr, GL_DYNAMIC_DRAW);
-    glGenBuffers(1, &errorBuffer); glBindBuffer(GL_SHADER_STORAGE_BUFFER, errorBuffer); glBufferData(GL_SHADER_STORAGE_BUFFER, 4, nullptr, GL_DYNAMIC_DRAW);
+    glGenBuffers(1, &errorBuffer); glBindBuffer(GL_SHADER_STORAGE_BUFFER, errorBuffer); glBufferData(GL_SHADER_STORAGE_BUFFER, 256, nullptr, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
@@ -84,6 +84,21 @@ void GPUFluidSolver::initShaders() {
     shiftShader = new Shader(1); shiftShader->addFromFile("shaders/compute/shift_grid.comp", GL_COMPUTE_SHADER);
     vortexPhysicsShader = new Shader(1); vortexPhysicsShader->addFromFile("shaders/compute/vortex_physics.comp", GL_COMPUTE_SHADER);
     debugUniformVelShader = new Shader(1); debugUniformVelShader->addFromFile("shaders/compute/debug_uniform_vel.comp", GL_COMPUTE_SHADER);
+    reinitShader = new Shader(1); reinitShader->addFromFile("shaders/compute/lbm_reinit.comp", GL_COMPUTE_SHADER);
+    clearSolidShader = new Shader(1); clearSolidShader->addFromFile("shaders/compute/clear_solid.comp", GL_COMPUTE_SHADER);
+}
+
+void GPUFluidSolver::reinitEquilibrium(M3DVector3f physVel) {
+    if (!reinitShader) return;
+    float u_scale = 0.001f / 0.25f;
+    M3DVector3f latVel = { physVel[0]*u_scale, physVel[1]*u_scale, physVel[2]*u_scale };
+    reinitShader->use();
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, f_in_SSBO);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, f_out_SSBO);
+    glBindImageTexture(3, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
+    reinitShader->setUniform("u_vel", UNI_VEC_3, latVel);
+    glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
+    debugUniformVelocity(physVel); 
 }
 
 void GPUFluidSolver::setGridBounds(M3DVector3f min, M3DVector3f max, M3DVector3f localWind) {
@@ -166,9 +181,8 @@ void GPUFluidSolver::resetParticles() {
 void GPUFluidSolver::dispatchCollision() {
     if (!collisionShader) return; collisionShader->use();
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, f_in_SSBO); glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, f_out_SSBO);
-    glBindImageTexture(2, velocityTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_RGBA16F);
     glBindImageTexture(3, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
-    float tau = 0.51f, Smag = 0.12f;
+    float tau = 0.505f, Smag = 0.05f;
     collisionShader->setUniform("tau", UNI_FLOAT_1, &tau); collisionShader->setUniform("SmagorinskyConstant", UNI_FLOAT_1, &Smag);
     glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
 }
@@ -182,7 +196,9 @@ void GPUFluidSolver::dispatchStream() {
 
 void GPUFluidSolver::dispatchReconstruct() {
     if (!reconstructShader) return; reconstructShader->use();
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, f_in_SSBO); glBindImageTexture(1, velocityTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, f_in_SSBO); 
+    glBindImageTexture(1, velocityTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+    glBindImageTexture(3, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
     float v_inv_scale = 250.0f; reconstructShader->setUniform("v_scale", UNI_FLOAT_1, &v_inv_scale);
     glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
 }
@@ -210,7 +226,7 @@ void GPUFluidSolver::dispatchForceCompute() {
     int zero[4] = {0,0,0,0}; glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 16, zero);
     glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
     int forceData[4]; glBindBuffer(GL_SHADER_STORAGE_BUFFER, forceSSBO); glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 16, forceData);
-    float scale_val = 0.001f, alpha = 0.08f;
+    float scale_val = 1e-6f, alpha = 0.08f;
     cfdForce[0] = forceData[0]*scale_val; cfdForce[1] = forceData[1]*scale_val; cfdForce[2] = forceData[2]*scale_val;
     filteredForce[0] = filteredForce[0]*(1.0f-alpha) + cfdForce[0]*alpha; filteredForce[1] = filteredForce[1]*(1.0f-alpha) + cfdForce[1]*alpha; filteredForce[2] = filteredForce[2]*(1.0f-alpha) + cfdForce[2]*alpha;
 }
@@ -241,8 +257,12 @@ void GPUFluidSolver::dispatchWakeInject(M3DVector3f planePos) {
         if (gpuVortices.size() >= 1024) break;
     }
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeSSBO); glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, gpuVortices.size()*48, gpuVortices.data());
-    wakeInjectShader->use(); glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, wakeSSBO); glBindImageTexture(1, velocityTexture, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA16F);
+    wakeInjectShader->use(); 
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, f_in_SSBO);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, wakeSSBO); 
+    glBindImageTexture(3, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
     unsigned int count = (unsigned int)gpuVortices.size(); wakeInjectShader->setUniform("numVortices", UNI_INT_1, &count);
+    float u_scale = 0.001f / 0.25f; wakeInjectShader->setUniform("u_scale", UNI_FLOAT_1, &u_scale);
     M3DVector3f worldGridMin, worldGridMax; m3dAddVectors3(worldGridMin, planePos, gridMin); m3dAddVectors3(worldGridMax, planePos, gridMax);
     wakeInjectShader->setUniform("gridMin", UNI_VEC_3, worldGridMin); wakeInjectShader->setUniform("gridMax", UNI_VEC_3, worldGridMax);
     glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
@@ -250,7 +270,7 @@ void GPUFluidSolver::dispatchWakeInject(M3DVector3f planePos) {
 
 void GPUFluidSolver::drawParticles(M3DMatrix44f mvp) {
     if (!particleRenderShader) return;
-    glMemoryBarrier(GL_ALL_BARRIER_BITS);
+    glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
     particleRenderShader->use();
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleSSBO);
     GLuint prog = particleRenderShader->getProgram();
@@ -261,24 +281,28 @@ void GPUFluidSolver::drawParticles(M3DMatrix44f mvp) {
     glUniform1f(dtLoc, lastDt);
 
     glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE); glDepthMask(GL_FALSE);
+    glLineWidth(1.0f);
     glDrawArrays(GL_LINES, 0, numParticles * 2);
+    glDrawArrays(GL_POINTS, 0, numParticles); // Add points for better density
+    glMaxShaderCompilerThreadsARB(4); // Non-standard, but useful for some drivers
     glDepthMask(GL_TRUE); glDisable(GL_BLEND);
 }
 
 void GPUFluidSolver::clearSolid() {
-    GLuint zero = 0; 
-    // Compatibility safe clear
-    std::vector<uint8_t> initial_solid(size, 0);
-    glBindTexture(GL_TEXTURE_3D, solidTexture); 
-    glTexSubImage3D(GL_TEXTURE_3D, 0, 0,0,0, NX, NY, NZ, GL_RED_INTEGER, GL_UNSIGNED_BYTE, initial_solid.data());
+    if (!clearSolidShader) return; clearSolidShader->use();
+    glBindImageTexture(3, solidTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_R8UI);
+    glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
 }
 
 void GPUFluidSolver::voxelizePart(ObjModel* model, M3DMatrix44f worldTransform) {
     if (!voxelizeShader || !model) return;
-    GLuint triSSBO = model->getTriSSBO(); glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, triSSBO);
-    voxelizeShader->use(); glBindImageTexture(1, solidTexture, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R8UI);
+    GLuint triSSBO = model->getTriSSBO(); 
+    if (triSSBO == 0) return;
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, triSSBO);
+    voxelizeShader->use(); glBindImageTexture(3, solidTexture, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R8UI);
     voxelizeShader->setUniform("gridMin", UNI_VEC_3, gridMin); voxelizeShader->setUniform("gridMax", UNI_VEC_3, gridMax);
-    unsigned int nTri = (unsigned int)(model->getNumIndices() / 3); voxelizeShader->setUniform("numTriangles", UNI_INT_1, &nTri);
+    unsigned int nTri = (unsigned int)(model->getNumIndices() / 3); 
+    voxelizeShader->setUniform("numTriangles", UNI_INT_1, &nTri);
     voxelizeShader->setUniform("modelMatrix", UNI_MATRIX_4, &worldTransform[0]);
     glDispatchCompute(nTri / 64 + 1, 1, 1); glMemoryBarrier(GL_ALL_BARRIER_BITS);
 }

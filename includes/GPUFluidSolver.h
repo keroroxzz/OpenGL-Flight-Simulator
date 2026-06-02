@@ -28,6 +28,8 @@ class GPUFluidSolver {
     Shader* shiftShader = nullptr;
     Shader* vortexPhysicsShader = nullptr;
     Shader* debugUniformVelShader = nullptr;
+    Shader* reinitShader = nullptr;
+    Shader* clearSolidShader = nullptr;
 
     GLuint particleSSBO = 0;
     int numParticles = 200000;
@@ -58,6 +60,7 @@ public:
 
     void step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxis, M3DVector3f planePos, float simTime);
     void debugUniformVelocity(M3DVector3f vel);
+    void reinitEquilibrium(M3DVector3f physVel);
     
     void clearSolid();
     void voxelizePart(class ObjModel* model, M3DMatrix44f worldTransform);

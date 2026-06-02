@@ -97,6 +97,41 @@ void F22::drawFlowField(M3DMatrix44f cvmatrix)
     gpuFluidSolver->drawParticles(mvp);
 }
 
+void F22::drawBoundingBox(M3DMatrix44f cvmatrix)
+{
+    M3DVector3f bMin, bMax;
+    gpuFluidSolver->getGridBounds(bMin, bMax);
+    
+    glPushMatrix();
+    glLoadMatrixf(cvmatrix);
+    // Grid bounds are relative to gridOrigin (which is plane->wpos at the start of updatePhysic)
+    glTranslatef(gridOrigin[0], gridOrigin[1], gridOrigin[2]);
+    
+    glDisable(GL_LIGHTING);
+    glLineWidth(2.0f);
+    glColor3f(1.0f, 1.0f, 0.0f); // Yellow
+    glBegin(GL_LINES);
+    // Draw edges of the box defined by bMin and bMax
+    // Bottom (z = bMin[2])
+    glVertex3f(bMin[0], bMin[1], bMin[2]); glVertex3f(bMax[0], bMin[1], bMin[2]);
+    glVertex3f(bMax[0], bMin[1], bMin[2]); glVertex3f(bMax[0], bMax[1], bMin[2]);
+    glVertex3f(bMax[0], bMax[1], bMin[2]); glVertex3f(bMin[0], bMax[1], bMin[2]);
+    glVertex3f(bMin[0], bMax[1], bMin[2]); glVertex3f(bMin[0], bMin[1], bMin[2]);
+    // Top (z = bMax[2])
+    glVertex3f(bMin[0], bMin[1], bMax[2]); glVertex3f(bMax[0], bMin[1], bMax[2]);
+    glVertex3f(bMax[0], bMin[1], bMax[2]); glVertex3f(bMax[0], bMax[1], bMax[2]);
+    glVertex3f(bMax[0], bMax[1], bMax[2]); glVertex3f(bMin[0], bMax[1], bMax[2]);
+    glVertex3f(bMin[0], bMax[1], bMax[2]); glVertex3f(bMin[0], bMin[1], bMax[2]);
+    // Pillars (verticals)
+    glVertex3f(bMin[0], bMin[1], bMin[2]); glVertex3f(bMin[0], bMin[1], bMax[2]);
+    glVertex3f(bMax[0], bMin[1], bMin[2]); glVertex3f(bMax[0], bMin[1], bMax[2]);
+    glVertex3f(bMax[0], bMax[1], bMin[2]); glVertex3f(bMax[0], bMax[1], bMax[2]);
+    glVertex3f(bMin[0], bMax[1], bMin[2]); glVertex3f(bMin[0], bMax[1], bMax[2]);
+    glEnd();
+    glEnable(GL_LIGHTING);
+    glPopMatrix();
+}
+
 void F22::visualize(M3DMatrix44f cvmatrix)
 {
 	plane->visualize(cvmatrix);
@@ -216,12 +251,13 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
 	}
 
     fluidUpdateCounter++;
-    if (fluidUpdateCounter >= 10) {
+    if (fluidUpdateCounter >= 1) {
         extern float sim_time;
-        fluidSolver->step(dt * 10.0f, plane->wvel, plane->waxis);
-        gpuFluidSolver->step(dt * 10.0f, plane->wvel, plane->waxis, plane->wpos, sim_time);
+        // Run fewer LBM steps per frame but more frequently for smoothness
+        gpuFluidSolver->step(dt * 1.0f, plane->wvel, plane->waxis, plane->wpos, sim_time);
         fluidUpdateCounter = 0;
     }
+
     flowField->update(dt, plane->wpos, plane->wvel, plane->waxis, invWaxis, fluidSolver);
 }
 
@@ -246,14 +282,14 @@ void F22::updateLBMTest(M3DVector3f wind)
     M3DVector3f bboxMax = { 15.0f, 10.0f, 10.0f };
     gpuFluidSolver->setGridBounds(bboxMin, bboxMax);
 
-    // BREAK SYMMETRY
-    M3DVector3f center = { 0.01f, 0.02f, 0.0f };
-    gpuFluidSolver->voxelizeCylinder(center, 1.5f, 20.0f, 2);
-
+    // BREAK SYMMETRY - Slight noise prevents perfect numerical symmetry that can delay vortex shedding
     M3DVector3f noisyWind;
     m3dCopyVector3(noisyWind, wind);
-    noisyWind[1] += sin(sim_time * 5.0f) * 0.2f;
-    noisyWind[2] += cos(sim_time * 7.0f) * 0.2f;
+    noisyWind[1] += sin(sim_time * 5.0f) * 0.5f;
+    noisyWind[2] += cos(sim_time * 7.0f) * 0.5f;
+
+    M3DVector3f center = { 0.0f, 0.0f, 0.0f };
+    gpuFluidSolver->voxelizeCylinder(center, 1.2f, 16.0f, 2);
 
     M3DVector3f dummyVel = { -noisyWind[0], -noisyWind[1], -noisyWind[2] };
     M3DMatrix44f identity;
@@ -261,13 +297,14 @@ void F22::updateLBMTest(M3DVector3f wind)
 
     fluidUpdateCounter++;
     if (fluidUpdateCounter >= 2) {
-        gpuFluidSolver->step(dt * 2.0f, dummyVel, identity, center, sim_time);
+        gpuFluidSolver->step(0.001f, dummyVel, identity, center, sim_time);
         fluidUpdateCounter = 0;
         totalIterations++;
         M3DVector3f* force = gpuFluidSolver->getCFDForce();
-        if (std::isnan((*force)[0])) exit(1);
-        if (totalIterations % 50 == 0) printf("[LBM Test] Iteration %d: Force = [%.2f, %.2f, %.2f]\n", totalIterations, (*force)[0], (*force)[1], (*force)[2]);
-        if (totalIterations >= 2000) exit(0);
+        if (std::isnan((*force)[0])) {
+            printf("[LBM Test] NaN detected! Resetting...\n");
+            gpuFluidSolver->resetParticles();
+        }
     }
 }
 

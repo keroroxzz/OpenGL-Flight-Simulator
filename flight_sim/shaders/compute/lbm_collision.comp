@@ -5,7 +5,6 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 layout(std430, binding = 0) buffer f_in_buf { float f_in[]; };
 layout(std430, binding = 1) buffer f_out_buf { float f_out[]; };
 
-layout(rgba16f, binding = 2) uniform readonly image3D velocity_img;
 layout(r8ui, binding = 3) uniform readonly uimage3D solid_img;
 
 uniform float tau;
@@ -33,7 +32,7 @@ const float MAX_DENSITY = 2.0;
 
 void main() {
     ivec3 pos = ivec3(gl_GlobalInvocationID);
-    ivec3 size = imageSize(velocity_img);
+    ivec3 size = imageSize(solid_img);
     if (pos.x >= size.x || pos.y >= size.y || pos.z >= size.z) return;
 
     int idx = (pos.z * size.y * size.x + pos.y * size.x + pos.x);
@@ -42,9 +41,24 @@ void main() {
     uint solid = imageLoad(solid_img, pos).r;
     if (solid != 0) return;
 
-    vec4 vel_rho = imageLoad(velocity_img, pos);
-    vec3 u = vel_rho.xyz;
-    float rho = clamp(vel_rho.w, MIN_DENSITY, MAX_DENSITY);
+    float f[19];
+    float rho = 0.0;
+    vec3 u = vec3(0.0);
+
+    for(int i=0; i<19; i++) {
+        f[i] = f_in[i * stride + idx];
+        rho += f[i];
+        u += f[i] * c[i];
+    }
+
+    if (rho > 0.01) {
+        u /= rho;
+    } else {
+        rho = 1.0;
+        u = vec3(0.0);
+    }
+    
+    rho = clamp(rho, MIN_DENSITY, MAX_DENSITY);
 
     // Enforce Mach Limit (Rule 6.4)
     float speed = length(u);
@@ -52,8 +66,10 @@ void main() {
         u = (u / speed) * MAX_VELOCITY;
     }
 
-    float f[19];
-    for(int i=0; i<19; i++) f[i] = f_in[i * stride + idx];
+    // Stochastic Perturbation to break symmetry and trigger turbulence
+    // High-frequency noise based on position and time (using stride as a proxy for index-based entropy)
+    float noise = fract(sin(dot(vec3(pos), vec3(12.9898, 78.233, 45.164))) * 43758.5453);
+    u += u * (noise - 0.5) * 0.001; 
 
     float u2 = dot(u, u);
     float feq[19];

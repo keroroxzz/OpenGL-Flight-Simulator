@@ -30,30 +30,14 @@ bool ObjModel::LoadObj(const char* pPathname, float scale_x, float scale_y, floa
 		const int strLen = 512;
 		char str[strLen];
 
-		fin.getline(str, strLen);
-		if (!fin.good())
-			throw "Error loading file!";
-		
-		//read to the start of the first obj
-		while (!fin.eof())
-		{
-			fin.getline(str, strLen);
-			if (str[0] == 'o' && str[1] == ' ')
-				break;
-		}
-		
 		std::vector<Vertex> vertices;
 		std::vector<Txcoord> txcoords;
 		std::vector<Norms> norms;
 		std::vector<Tfacet> faces;
 
 		cout << "Start loading "<< pPathname << endl;
-		while (!fin.eof())
+		while (fin.getline(str, strLen))
 		{
-			fin.getline(str, strLen);
-
-			if (fin.eof()) break;
-
 			if (strncmp(str, "v ", 2) == 0)
 			{
 				Vertex n_ver;
@@ -97,14 +81,22 @@ bool ObjModel::LoadObj(const char* pPathname, float scale_x, float scale_y, floa
 			else if (strncmp(str, "f ", 2) == 0)
 			{
 				Tfacet face;
-				sscanf(str, "f %d/%d/%d %d/%d/%d %d/%d/%d", &face.v[0], &face.t[0], &face.n[0], &face.v[1], &face.t[1], &face.n[1], &face.v[2], &face.t[2], &face.n[2]);
+                // Handle various face formats: v, v/t, v//n, v/t/n
+                if (strstr(str, "//")) {
+				    sscanf(str, "f %d//%d %d//%d %d//%d", &face.v[0], &face.n[0], &face.v[1], &face.n[1], &face.v[2], &face.n[2]);
+                    face.t[0] = face.t[1] = face.t[2] = 1; // Dummy
+                } else {
+                    int n = sscanf(str, "f %d/%d/%d %d/%d/%d %d/%d/%d", &face.v[0], &face.t[0], &face.n[0], &face.v[1], &face.t[1], &face.n[1], &face.v[2], &face.t[2], &face.n[2]);
+                    if (n < 9) {
+                        // Try v/t
+                        n = sscanf(str, "f %d/%d %d/%d %d/%d", &face.v[0], &face.t[0], &face.v[1], &face.t[1], &face.v[2], &face.t[2]);
+                        face.n[0] = face.n[1] = face.n[2] = 1; // Dummy
+                    }
+                }
 				face.minus();
 				faces.push_back(face);
 			}
-			else if (str[0] == 'o' && str[1] == ' ')
-				break;
 		}
-		fin.clear();
 		fin.close();
 		
 		cout << "Totally " << vertices.size() << " vertices, " << txcoords.size() << " txcoords, " << norms.size()<<" norms, " << faces.size() << " faces."<<endl;
@@ -254,6 +246,11 @@ GLuint ObjModel::getTriSSBO()
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, triSSBO);
     glBufferData(GL_SHADER_STORAGE_BUFFER, triangles.size() * sizeof(GPUTriangle), triangles.data(), GL_STATIC_DRAW);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    std::cout << "[ObjModel] Created triSSBO with " << triangles.size() << " triangles" << std::endl;
+    if (triangles.size() > 0) {
+        std::cout << "[ObjModel] First triangle p0: [" << triangles[0].p0[0] << ", " << triangles[0].p0[1] << ", " << triangles[0].p0[2] << "]" << std::endl;
+    }
 
     return triSSBO;
 }

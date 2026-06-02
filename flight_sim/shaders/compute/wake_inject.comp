@@ -3,7 +3,7 @@
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
 layout(std430, binding = 0) buffer f_buf { float f[]; };
-layout(rgba16f, binding = 1) uniform image3D velocity_img;
+layout(r8ui, binding = 3) uniform readonly uimage3D solid_img;
 
 struct WakeVortex {
     vec4 position;
@@ -18,6 +18,23 @@ layout(std430, binding = 2) buffer wake_buf {
 uniform uint numVortices;
 uniform vec3 gridMin;
 uniform vec3 gridMax;
+uniform float u_scale; // To convert physical m/s to lattice units
+
+const vec3 c[19] = vec3[](
+    vec3(0,0,0),
+    vec3(1,0,0), vec3(-1,0,0), vec3(0,1,0), vec3(0,-1,0), vec3(0,0,1), vec3(0,0,-1),
+    vec3(1,1,0), vec3(-1,-1,0), vec3(1,-1,0), vec3(-1,1,0),
+    vec3(1,0,1), vec3(-1,0,-1), vec3(1,0,-1), vec3(-1,0,1),
+    vec3(0,1,1), vec3(0,-1,-1), vec3(0,1,-1), vec3(0,-1,1)
+);
+
+const float w[19] = float[](
+    1.0/3.0,
+    1.0/18.0, 1.0/18.0, 1.0/18.0, 1.0/18.0, 1.0/18.0, 1.0/18.0,
+    1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0,
+    1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0,
+    1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0
+);
 
 // Biot-Savart approximation for a vortex segment/point
 vec3 calculateVortexVelocity(vec3 p, vec3 vPos, vec3 vDir, float circulation, float radius) {
@@ -36,8 +53,13 @@ vec3 calculateVortexVelocity(vec3 p, vec3 vPos, vec3 vDir, float circulation, fl
 
 void main() {
     ivec3 pos = ivec3(gl_GlobalInvocationID);
-    ivec3 size = imageSize(velocity_img);
+    ivec3 size = imageSize(solid_img);
     if (pos.x >= size.x || pos.y >= size.y || pos.z >= size.z) return;
+
+    if (imageLoad(solid_img, pos).r != 0) return;
+
+    int idx = (pos.z * size.y * size.x + pos.y * size.x + pos.x);
+    int stride = size.x * size.y * size.z;
 
     vec3 worldPos = gridMin + (vec3(pos) / vec3(size)) * (gridMax - gridMin);
     
@@ -52,10 +74,16 @@ void main() {
         );
     }
 
-    if (length(inducedVel) > 0.001) {
-        vec4 oldVal = imageLoad(velocity_img, pos);
-        // Inject as a bias to the velocity field
-        // This will be picked up by the next collision step
-        imageStore(velocity_img, pos, vec4(oldVal.xyz + inducedVel, oldVal.w));
+    if (length(inducedVel) > 0.0001) {
+        vec3 du = inducedVel * u_scale;
+        
+        // Calculate current density
+        float rho = 0.0;
+        for(int i=0; i<19; i++) rho += f[i * stride + idx];
+        
+        // Inject momentum change into distributions
+        for(int i=0; i<19; i++) {
+            f[i * stride + idx] += w[i] * rho * (3.0 * dot(c[i], du));
+        }
     }
 }
