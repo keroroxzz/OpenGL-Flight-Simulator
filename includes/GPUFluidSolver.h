@@ -78,7 +78,7 @@ public:
     void dispatchCollision();
     void dispatchStream();
     void dispatchReconstruct();
-    void dispatchParticleAdvect(float dt, M3DVector3f planeVel, M3DVector3f planePos, M3DMatrix44f planeWaxis, float simTime);
+    void dispatchParticleAdvect(float dt, M3DVector3f planePos, M3DMatrix44f planeWaxis, float simTime);
     void dispatchForceCompute();
     void dispatchWakeExtract(float dt, M3DMatrix44f planeWaxis, M3DVector3f planePos);
     void dispatchWakeInject(M3DVector3f planePos);

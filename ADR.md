@@ -79,3 +79,82 @@ Pass `gridVel` (aircraft velocity) to the `particle_advect.comp` shader and upda
 ### Consequences
 - Particles now maintain consistent world-space positions when the grid moves.
 - Visualization in Wind Tunnel mode correctly shows particles moving at the speed of the injected wind.
+
+---
+
+## ADR 6: Robust Particle Rendering and NaN Safety
+**Date**: 2026-06-03
+**Status**: Accepted
+
+### Context
+"Random triangles" artifacts were observed in Wind Tunnel mode, likely caused by NaN positions in the particle SSBO being passed to the vertex shader. NaNs in `gl_Position` result in undefined geometry behavior. Additionally, invalid particles were set to `(0,0,0,0)`, which could render as lines to the origin.
+
+### Decision
+1. Update `particle.vs` to explicitly detect and discard NaN/Inf positions by moving them outside the clip volume.
+2. Discard invalid particles (`alpha <= 0.01`) by moving them to a clipped coordinate instead of the NDC origin.
+3. Move the LBM stability check *before* reconstruction and advection in `GPUFluidSolver::step` to prevent NaN propagation from the fluid field to the particle system.
+
+### Consequences
+- "Exploding" geometry and random triangle artifacts are eliminated.
+- Particle system is now isolated from transient LBM instabilities.
+
+---
+
+## ADR 7: Standardized SSBO Bindings
+**Date**: 2026-06-03
+**Status**: Accepted
+
+### Context
+Multiple compute shaders and host-side calls were using conflicting SSBO binding indices (predominantly 0). This caused data corruption where LBM distributions, particle data, and triangle meshes were overwriting each other, leading to persistent "random triangle" artifacts and broken physics.
+
+### Decision
+Standardize a fixed binding scheme across all shaders and C++ code:
+- 0: `f_in` (LBM)
+- 1: `f_out` (LBM) / `velocity_img` (Image)
+- 2: `particles`
+- 3: `solid_img` (Image)
+- 4: `vortices` (Wake)
+- 5: `triangles` (Mesh)
+- 6: `force`
+- 7: `candidates` (Wake Extract)
+- 8: `counter` (Wake Extract)
+- 9: `error` (Stability Check)
+
+### Consequences
+- Data corruption between independent systems is eliminated.
+- Physics and visualization are now robust and consistent.
+
+---
+
+## ADR 8: Synchronization of Simulation Speed
+**Date**: 2026-06-03
+**Status**: Accepted
+
+### Context
+`flight_sim` was running 10x faster than `aircraft_test` because it executed 10 sub-steps per frame, whereas the test harness executed only one. This made visual verification and tuning difficult.
+
+### Decision
+Implement `updatePhysicStep` to allow single-step execution. In Wind Tunnel mode (F6), `Main.cpp` now calls this single-step function to match the visual cadence of the test harnesses.
+
+### Consequences
+- Visualization speed is consistent across all simulation modes.
+- Easier to compare LBM behavior between test and main application.
+
+---
+
+## ADR 9: Rendering Diagnostic Toggles
+**Date**: 2026-06-03
+**Status**: Accepted
+
+### Context
+Persistent "random triangle" artifacts were observed in the main application visualization. To localize the cause within the complex rendering pipeline (lighting, sky, particles), a method to isolate components was needed.
+
+### Decision
+Implement keyboard and menu toggles for major rendering stages:
+- **F7**: Toggle Lighting (Aircraft/Model rendering)
+- **F8**: Toggle Clouds (Sky/Atmosphere shader)
+- Existing **F4**: Toggle Streamlines (LBM Particles)
+
+### Consequences
+- Allows the developer to determine which shader/stage is producing the geometric artifacts.
+- Improved debuggability of the rendering pipeline.

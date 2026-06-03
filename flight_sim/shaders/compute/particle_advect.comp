@@ -17,7 +17,6 @@ layout(r8ui, binding = 2) uniform readonly uimage3D solid_img;
 uniform float dt;
 uniform vec3 gridMin;
 uniform vec3 gridMax;
-uniform vec3 gridVel;
 uniform vec3 spawnPos;
 uniform vec3 spawnRange;
 uniform float iTime;
@@ -89,7 +88,7 @@ void main() {
 
         for(int i=0; i<steps; i++) {
             vec3 v = getVelocity(p.pos_life.xyz);
-            vec3 nextPos = p.pos_life.xyz + (v + gridVel) * sub_dt;
+            vec3 nextPos = p.pos_life.xyz + v * sub_dt;
             
             vec3 nextUVW = (nextPos - gridMin) / (gridMax - gridMin);
             ivec3 voxPos = ivec3(nextUVW * vec3(texSize));
