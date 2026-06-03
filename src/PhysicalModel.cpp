@@ -4,7 +4,7 @@
 #include <cmath>
 
 #define VEC_SIZE 4.0
-float dt = 0.0002;
+float dt = 0.001;
 // extern bool showForce;
 
 std::ostream& operator<<(std::ostream& o, M3DMatrix44d m)

@@ -37,9 +37,14 @@ Write UT First: You must prioritize writing C++ unit tests (e.g., using Google T
 No-OpenGL Dependency: Decouple your physical solvers (LBM class, Biot-Savart calculations, rigid body kinematics) from OpenGL handles. Ensure the mathematical core can compile and run as a pure console application for rapid test coverage.
 Mock GLFW/GLUT: Create a mocked mock-graphics context header to allow running physics tests on headless environments without failing on window creation.
 
+## Development Workflow & Traceability
+
+- **Git Commitment**: You must proactively commit working changes after successfully verifying a sub-task or fix. Ensure commit messages are clear and follow project conventions.
+- **Architecture Decision Record (ADR)**: Maintain an `ADR.md` file to trace important architectural changes, mathematical model selections, and logic refactors. Every significant change must be documented in the ADR with its rationale.
+
 ## Headless Self-Diagnostics & Image Verification
 
-You must implement and use automated offline execution modes to verify your code changes before declaring a task finished.
+You must implement and use automated offline execution modes to verify your code changes before declaring a task finished. **Always prioritize writing or updating headless tests to verify your results empirically.**
 
 A. Headless Run Mode
 Maintain a command-line test runner (e.g., ./flight_sim --headless-test --steps 100).

@@ -331,7 +331,10 @@ void ObjModel::draw(int mode, int drawmode, GLint model_view_loc)
 
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, VBO[3]);
 		glDrawElements(drawmode, n_Ind, GL_UNSIGNED_SHORT, NULL);
+        
 		glDisableClientState(GL_VERTEX_ARRAY);
+		glDisableClientState(GL_NORMAL_ARRAY);
+		glDisableClientState(GL_TEXTURE_COORD_ARRAY);
 
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 		glBindBuffer(GL_ARRAY_BUFFER, 0);

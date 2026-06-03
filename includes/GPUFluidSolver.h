@@ -32,6 +32,7 @@ class GPUFluidSolver {
     Shader* clearSolidShader = nullptr;
 
     GLuint particleSSBO = 0;
+    GLuint dummyVAO = 0;
     int numParticles = 200000;
 
     GLuint forceSSBO = 0;

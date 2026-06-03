@@ -15,7 +15,7 @@ int windowWidth = 1024;
 int windowHeight = 768;
 bool running = true;
 float sim_time = 0.0;
-M3DVector3f windVelocity = {1.0f, 0.0f, 0.0f}; // 30 m/s (~60 kts)
+M3DVector3f windVelocity = {10.0f, 0.0f, 0.0f}; // 30 m/s (~60 kts)
 
 M3DMatrix44f projection, model_view;
 

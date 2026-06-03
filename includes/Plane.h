@@ -25,13 +25,12 @@ class F22
     GPUFluidSolver *gpuFluidSolver;
     M3DVector3f gridOrigin;
 
-    float sliceRoll = 0.0f, slicePitch = 90.0f, sliceDist = 5.0f;
-
 public:
 	F22();
 
 	void updatePhysic(bool windTunnel = false, M3DVector3f wind = nullptr);
     void updateLBMTest(M3DVector3f wind);
+    void reinitEquilibrium(M3DVector3f wind);
 
 	void display(M3DMatrix44f cvmatrix, GLint model_view_loc=-1);
 	void visualize(M3DMatrix44f cvmatrix);

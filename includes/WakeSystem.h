@@ -23,8 +23,11 @@ public:
             it->age += dt;
             it->circulation *= exp(-it->decayRate * dt);
             
-            // Advection (simple for now, could use a coarse wind field)
-            // it->position += ...
+            // Advection by background wind
+            extern M3DVector3f windVelocity;
+            it->position[0] += windVelocity[0] * dt;
+            it->position[1] += windVelocity[1] * dt;
+            it->position[2] += windVelocity[2] * dt;
             
             if (it->age > maxAge || abs(it->circulation) < 0.01f) {
                 it = vortices.erase(it);

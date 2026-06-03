@@ -55,6 +55,7 @@ void GPUFluidSolver::initBuffers() {
     glTexImage3D(GL_TEXTURE_3D, 0, GL_R8UI, NX, NY, NZ, 0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, initial_solid.data());
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     
+    glGenVertexArrays(1, &dummyVAO);
     glGenBuffers(1, &particleSSBO); resetParticles(); 
     glGenBuffers(1, &forceSSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, forceSSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, 16, nullptr, GL_DYNAMIC_COPY);
     glGenBuffers(1, &wakeCandidateSSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeCandidateSSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float)*8*1024, nullptr, GL_DYNAMIC_COPY);
@@ -123,7 +124,7 @@ void GPUFluidSolver::dispatchShift(int ox, int oy, int oz, M3DVector3f localWind
 
 void GPUFluidSolver::step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxis, M3DVector3f planePos, float simTime) {
     lastDt = dt;
-    float dx = 0.25f, dt_lbm = 0.001f, u_scale = dt_lbm / dx;
+    float dx = 0.25f, u_scale = dt / dx;
     extern M3DVector3f windVelocity; M3DVector3f relWindPhys; m3dSubtractVectors3(relWindPhys, windVelocity, planeVel);
     M3DVector3f localWindLattice = { relWindPhys[0]*u_scale, relWindPhys[1]*u_scale, relWindPhys[2]*u_scale };
     for(int i=0; i<3; i++) { if(localWindLattice[i]>0.15f) localWindLattice[i]=0.15f; if(localWindLattice[i]<-0.15f) localWindLattice[i]=-0.15f; }
@@ -295,6 +296,7 @@ void GPUFluidSolver::drawParticles(M3DMatrix44f mvp) {
     if (!particleRenderShader) return;
     glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
     particleRenderShader->use();
+    glBindVertexArray(dummyVAO);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleSSBO);
     GLuint prog = particleRenderShader->getProgram();
     GLint mvpLoc = glGetUniformLocation(prog, "modelViewProj");
@@ -306,9 +308,9 @@ void GPUFluidSolver::drawParticles(M3DMatrix44f mvp) {
     glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE); glDepthMask(GL_FALSE);
     glLineWidth(1.0f);
     glDrawArrays(GL_LINES, 0, numParticles * 2);
-    glDrawArrays(GL_POINTS, 0, numParticles); // Add points for better density
     glMaxShaderCompilerThreadsARB(4); // Non-standard, but useful for some drivers
     glDepthMask(GL_TRUE); glDisable(GL_BLEND);
+    glBindVertexArray(0);
 }
 
 void GPUFluidSolver::clearSolid() {

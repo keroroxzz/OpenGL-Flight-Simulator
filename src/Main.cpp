@@ -14,12 +14,12 @@
 #include "ObjModel.h"
 #include "Plane.h"
 #include <chrono>
+#include <unistd.h>
 
 bool showForce = true;
 bool isShowingForce = false;
 bool isShowingF22 = true;
 bool isWindTunnelMode = false;
-bool isLBMCylinderTest = false;
 M3DVector3f windVelocity = {30.0f, 0.0f, 0.0f};
 
 bool running = false;
@@ -206,7 +206,7 @@ void RenderScene(void)
     glViewport(0, 0, windowWidth, windowHeight);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
-    if (isShowingF22 && !isLBMCylinderTest) {
+    if (isShowingF22) {
         lightingShader->use();
         lightingShader->setUniform("InvVP", UNI_MATRIX_4, &inverse_model_view_proj[0]);
         lightingShader->setUniform("InvNVP", UNI_MATRIX_3, &inverse_model_view_rot[0]);
@@ -233,19 +233,6 @@ void RenderScene(void)
         f22->display(model_view, model_view_loc);
     }
     
-    if (isLBMCylinderTest) {
-        glPushMatrix();
-        glLoadMatrixf(model_view);
-        glColor3f(0.5, 0.5, 0.5);
-        glDisable(GL_TEXTURE_2D);
-        GLUquadricObj *quad = gluNewQuadric();
-        glTranslatef(0,0,-10);
-        gluCylinder(quad, 1.5, 1.5, 20.0, 32, 1);
-        gluDeleteQuadric(quad);
-        glEnable(GL_TEXTURE_2D);
-        glPopMatrix();
-    }
-
     glUseProgram(0);
     if (!isWindTunnelMode) {
         skyShader->use();
@@ -277,7 +264,7 @@ void RenderScene(void)
     glUseProgram(0);
 
     // FINAL PASS: Render all transparent/line effects over opaque scene (sky/map/cylinder)
-    if (isShowingF22 || isLBMCylinderTest) {
+    if (isShowingF22) {
         f22->drawFlowField(model_view);
         f22->drawBoundingBox(model_view);
     }
@@ -319,17 +306,21 @@ void ProcessMenu(int value)
     M3DVector3f zero = { 0,0,0 };
     switch (value)
     {
-    case 1: running = !running; break;
+    case 1: 
+        running = !running; 
+        if (running) {
+             f22->reinitEquilibrium(windVelocity);
+        }
+        break;
     case 2: f22->setPosition(zero); f22->thrustControl(0); break;
-    case 3: isWindTunnelMode = !isWindTunnelMode; if (isWindTunnelMode) { f22->setPosition(zero); running = true; } break;
-    case 4: isLBMCylinderTest = !isLBMCylinderTest; if (isLBMCylinderTest) running = true; break;
-    case 5: sim_time = 0; ReloadShaders(false); break;
+    case 3: isWindTunnelMode = !isWindTunnelMode; if (isWindTunnelMode) { f22->setPosition(zero); f22->reinitEquilibrium(windVelocity); running = true; } break;
+    case 5: sim_time = 0; f22->reinitEquilibrium(windVelocity); ReloadShaders(false); break;
     case 10: isShowingForce = !isShowingForce; break;
     case 11: isShowingF22 = !isShowingF22; break;
     case 13: ReloadShaders(false); break;
-    case 20: windVelocity[0] += 10.0f; break;
-    case 21: windVelocity[0] -= 10.0f; break;
-    case 26: windVelocity[0] = 30.0f; windVelocity[1] = 0.0f; windVelocity[2] = 0.0f; break;
+    case 20: windVelocity[0] += 10.0f; f22->reinitEquilibrium(windVelocity); break;
+    case 21: windVelocity[0] -= 10.0f; f22->reinitEquilibrium(windVelocity); break;
+    case 26: windVelocity[0] = 30.0f; windVelocity[1] = 0.0f; windVelocity[2] = 0.0f; f22->reinitEquilibrium(windVelocity); break;
     case 100: exit(0); break;
     }
     glutPostRedisplay();
@@ -373,7 +364,6 @@ void SetupRC()
     glutAddMenuEntry("Play/Pause (F1)", 1);
     glutAddMenuEntry("Reset Aircraft", 2);
     glutAddMenuEntry("Toggle Wind Tunnel Mode (F6)", 3);
-    glutAddMenuEntry("Toggle LBM Cylinder Test (F7)", 4);
     glutAddMenuEntry("Reset Simulation (Time=0)", 5);
     int nVisMenu = glutCreateMenu(ProcessMenu);
     glutAddMenuEntry("Toggle Force Vectors (F2)", 10);
@@ -407,8 +397,8 @@ void KeyPressFunc(unsigned char key, int x, int y)
              targetCamPos[0] -= plane_coord[0] * 0.5f; targetCamPos[1] -= plane_coord[1] * 0.5f; targetCamPos[2] -= plane_coord[2] * 0.5f;
         } else f22->thrustControl(0.0);
         break;
-    case '[': windVelocity[0] -= 5.0f; break;
-    case ']': windVelocity[0] += 5.0f; break;
+    case '[': windVelocity[0] -= 5.0f; f22->reinitEquilibrium(windVelocity); break;
+    case ']': windVelocity[0] += 5.0f; f22->reinitEquilibrium(windVelocity); break;
     case 'q': exit(0); break;
     }
     glutPostRedisplay();
@@ -430,21 +420,21 @@ void SpecialKeys(int key, int x, int y)
 {
     switch (key)
     {
-    case GLUT_KEY_F1: running = !running; break;
+    case GLUT_KEY_F1: 
+        running = !running; 
+        if (running) f22->reinitEquilibrium(windVelocity);
+        break;
     case GLUT_KEY_F2: isShowingForce = !isShowingForce; break;
     case GLUT_KEY_F3: ReloadShaders(false); break;
     case GLUT_KEY_F4: isShowingF22 = !isShowingF22; break;
-    case GLUT_KEY_F6: isWindTunnelMode = !isWindTunnelMode; if (isWindTunnelMode) { M3DVector3f zero={0,0,0}; f22->setPosition(zero); running = true; } break;
-    case GLUT_KEY_F7: 
-        isLBMCylinderTest = !isLBMCylinderTest; 
-        if (isLBMCylinderTest) {
-            running = true;
-            M3DVector3f zero = {0,0,0};
-            m3dCopyVector3(cameraFocus, zero);
-            M3DVector3f testCam = { -15, -15, 5 };
-            m3dCopyVector3(targetCamPos, testCam);
-        }
-        break;
+    case GLUT_KEY_F6: 
+        isWindTunnelMode = !isWindTunnelMode; 
+        if (isWindTunnelMode) { 
+            M3DVector3f zero={0,0,0}; 
+            f22->setPosition(zero); 
+            f22->reinitEquilibrium(windVelocity);
+            running = true; 
+        } break;
     case GLUT_KEY_PAGE_UP: { M3DVector3f d={0,0,10.0}; f22->setDisplacement(d); } break;
     case GLUT_KEY_PAGE_DOWN: { M3DVector3f d={0,0,-10.0}; f22->setDisplacement(d); } break;
     }
@@ -460,13 +450,11 @@ void idle()
     m3dScaleVector3(sun, 0.5);
     m3dNormalizeVector(sun);
     if (running) {
-        if (isLBMCylinderTest) { for (int i = 0; i < 50; i++) f22->updateLBMTest(windVelocity); }
-        else { for (int i = 0; i < 100; i++) f22->updatePhysic(isWindTunnelMode, windVelocity); }
+        f22->updatePhysic(isWindTunnelMode, windVelocity);
     }
     cameraPos[0] = cameraPos[0]*0.9 + targetCamPos[0]*0.1;
     cameraPos[1] = cameraPos[1]*0.9 + targetCamPos[1]*0.1;
     cameraPos[2] = cameraPos[2]*0.9 + targetCamPos[2]*0.1;
-    sim_time += 0.001;
     usleep(10);
 }
 
