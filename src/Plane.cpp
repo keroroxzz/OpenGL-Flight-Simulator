@@ -232,7 +232,6 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
 	{
 		plane->updatePositionVelocity(plane);
         m3dInvertMatrix44(invWaxis, plane->waxis);
-        if (windTunnel && wind) m3dCopyVector3(plane->wvel, wind);
         
         if (!windTunnel) {
             thruster->applyEffect(plane);
