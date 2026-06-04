@@ -7,16 +7,17 @@ struct Particle {
     vec4 vel_vort; // xyz = vel, w = vorticity magnitude
 };
 
-layout(std430, binding = 0) buffer particle_buf {
+layout(std430, binding = 2) buffer particle_buf {
     Particle particles[];
 };
 
-uniform sampler3D velocity_tex; // Switch to sampler for linear interpolation
-layout(r8ui, binding = 2) uniform readonly uimage3D solid_img;
+uniform sampler3D velocity_tex; 
+layout(r8ui, binding = 3) uniform readonly uimage3D solid_img;
 
 uniform float dt;
 uniform vec3 gridMin;
 uniform vec3 gridMax;
+uniform vec3 gridVel;
 uniform vec3 spawnPos;
 uniform vec3 spawnRange;
 uniform float iTime;
@@ -36,8 +37,7 @@ float random(uint seed) {
 
 vec3 getVelocity(vec3 worldPos) {
     vec3 uvw = (worldPos - gridMin) / (gridMax - gridMin);
-    // Smooth linear interpolation from hardware
-    return texture(velocity_tex, uvw).xyz;
+    return texture(velocity_tex, clamp(uvw, vec3(0.0), vec3(1.0))).xyz;
 }
 
 void main() {
@@ -51,16 +51,14 @@ void main() {
     
     vec3 uvw = (p.pos_life.xyz - gridMin) / (gridMax - gridMin);
     
-    // REFACTOR: Robust failure detection (NaN, Inf, or Out of Bounds)
-    bool isInvalid = any(isnan(p.pos_life.xyz)) || any(isinf(p.pos_life.xyz));
+    bool isInvalid = any(isnan(p.pos_life)) || any(isinf(p.pos_life));
     bool isOutOfBounds = any(lessThan(uvw, vec3(-0.01))) || any(greaterThan(uvw, vec3(1.01)));
     bool isExpired = (life_s <= 0.0);
     
     if (isInvalid) {
-        // NaN DIAGNOSTIC MODE: Force red color and dummy drift
-        p.vel_vort = vec4(5.0, 0.0, 0.0, -100.0); // -100.0 is the "RED" flag
         p.pos_life.xyz = gridMin + vec3(0.1, 0.5, 0.5) * (gridMax - gridMin); 
         p.pos_life.w = 1.0;
+        p.vel_vort = vec4(0.0);
         particles[idx] = p;
         return;
     }
@@ -68,7 +66,6 @@ void main() {
     bool respawn = isOutOfBounds || isExpired;
 
     if (respawn) {
-        // Improved random seed to prevent clustering
         uint seed = idx + uint(iTime * 1337.0) + uint(hash(idx) * 0.1);
         vec3 randOffset = vec3(random(seed), random(seed + 7), random(seed + 13)) - 0.5;
         
@@ -81,21 +78,20 @@ void main() {
         p.pos_life.w = 0.4 + random(seed + 37) * 0.6;
         p.vel_vort = vec4(0.0);
     } else {
-        // Sub-stepping for smooth advection
         const int steps = 2;
         float sub_dt = dt / float(steps);
         ivec3 texSize = textureSize(velocity_tex, 0);
 
         for(int i=0; i<steps; i++) {
             vec3 v = getVelocity(p.pos_life.xyz);
-            vec3 nextPos = p.pos_life.xyz + v * sub_dt;
+            // v is physical velocity, gridVel is physical velocity
+            vec3 nextPos = p.pos_life.xyz + (v + gridVel) * sub_dt;
             
             vec3 nextUVW = (nextPos - gridMin) / (gridMax - gridMin);
             ivec3 voxPos = ivec3(nextUVW * vec3(texSize));
             
             if (voxPos.x >= 0 && voxPos.x < texSize.x && voxPos.y >= 0 && voxPos.y < texSize.y && voxPos.z >= 0 && voxPos.z < texSize.z) {
                 if (imageLoad(solid_img, voxPos).r != 0) {
-                    // Collision! Don't move further, maybe slide or just stop
                     break;
                 }
             }
@@ -104,7 +100,6 @@ void main() {
             p.vel_vort.xyz = v;
         }
         
-        // Dynamic vorticity sampling
         vec3 uvw_v = (p.pos_life.xyz - gridMin) / (gridMax - gridMin);
         vec3 eps = 1.0 / vec3(texSize);
         
