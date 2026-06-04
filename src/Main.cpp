@@ -19,8 +19,6 @@
 bool showForce = true;
 bool isShowingForce = false;
 bool isShowingF22 = true;
-bool isShowingClouds = true;
-bool isShowingLighting = true;
 bool isWindTunnelMode = false;
 M3DVector3f windVelocity = {30.0f, 0.0f, 0.0f};
 
@@ -49,8 +47,8 @@ M3DMatrix33f inverse_model_view_rot;
 
 M3DMatrix44f plane_coord;
 GLfloat planePos[] = {  0.0f, 0.0f, 0.0f, 1.0f };
-GLfloat cameraPos[] = { -11.218950, -11.772061, 1.376742, 1.0f };
-GLfloat targetCamPos[] = { -11.218950, -11.772061, 1.376742, 1.0f };
+GLfloat cameraPos[] = { -11.218950, -11.772061, 1.376742 };
+GLfloat targetCamPos[] = { -11.218950, -11.772061, 1.376742 };
 GLdouble cameraZoom = 0.5;
 GLfloat camax = 1.0, camay = 0.7;
 
@@ -121,23 +119,10 @@ void UpdateCameraPose()
 void DrawWindArrow(M3DMatrix44f mv)
 {
     float speed = m3dGetMagnitude(windVelocity);
-    if (speed < 0.1f || std::isnan(speed)) return;
-    
-    // Safety check for cameraFocus
-    if (std::isnan(cameraFocus[0]) || std::isnan(cameraFocus[1]) || std::isnan(cameraFocus[2])) return;
-
+    if (speed < 0.1f) return;
     glPushMatrix();
     glLoadMatrixf(mv);
     glTranslatef(cameraFocus[0] + plane_coord[0]*10.0f, cameraFocus[1] + plane_coord[1]*10.0f + 10.0f, cameraFocus[2] + plane_coord[2]*10.0f);
-    
-    // Final check for translation matrix
-    M3DMatrix44f currentMV;
-    glGetFloatv(GL_MODELVIEW_MATRIX, currentMV);
-    if (std::isnan(currentMV[12]) || std::isnan(currentMV[13]) || std::isnan(currentMV[14])) {
-        glPopMatrix();
-        return;
-    }
-
     glDisable(GL_LIGHTING);
     glLineWidth(4.0f);
     glColor3f(1.0f, 1.0f, 0.0f);
@@ -222,38 +207,34 @@ void RenderScene(void)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
     if (isShowingF22) {
-        if (isShowingLighting) {
-            lightingShader->use();
-            lightingShader->setUniform("InvVP", UNI_MATRIX_4, &inverse_model_view_proj[0]);
-            lightingShader->setUniform("InvNVP", UNI_MATRIX_3, &inverse_model_view_rot[0]);
-            lightingShader->setUniform("ProjectionMatrix", UNI_MATRIX_4, &projection[0]);
-            lightingShader->setUniform("ShadowMVP", UNI_MATRIX_4, &model_view_proj_shadow[0]);
-            lightingShader->setUniform("windowWidth", UNI_INT_1, &windowWidth);
-            lightingShader->setUniform("windowHeight", UNI_INT_1, &windowHeight);
-            lightingShader->setUniform("camera", UNI_VEC_4, cameraPos);
-            if (isWindTunnelMode) {
-                M3DVector3f camDir;
-                m3dSubtractVectors3(camDir, cameraPos, planePos);
-                m3dNormalizeVector(camDir);
-                lightingShader->setUniform("SunDirection", UNI_VEC_3, camDir);
-            } else {
-                lightingShader->setUniform("SunDirection", UNI_VEC_3, sun);
-            }
-            GLint model_view_loc = lightingShader->uniformLocation("ModelViewMatrix");
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, texture);
-            lightingShader->setUniform("sampler0", UNI_TEXTURE, nullptr, 1, GL_FALSE, 0);
-            glActiveTexture(GL_TEXTURE1);
-            glBindTexture(GL_TEXTURE_2D, shadow_texture);
-            lightingShader->setUniform("sampler1", UNI_TEXTURE, nullptr, 1, GL_FALSE, 1);
-            f22->display(model_view, model_view_loc);
+        lightingShader->use();
+        lightingShader->setUniform("InvVP", UNI_MATRIX_4, &inverse_model_view_proj[0]);
+        lightingShader->setUniform("InvNVP", UNI_MATRIX_3, &inverse_model_view_rot[0]);
+        lightingShader->setUniform("ProjectionMatrix", UNI_MATRIX_4, &projection[0]);
+        lightingShader->setUniform("ShadowMVP", UNI_MATRIX_4, &model_view_proj_shadow[0]);
+        lightingShader->setUniform("windowWidth", UNI_INT_1, &windowWidth);
+        lightingShader->setUniform("windowHeight", UNI_INT_1, &windowHeight);
+        lightingShader->setUniform("camera", UNI_VEC_4, cameraPos);
+        if (isWindTunnelMode) {
+            M3DVector3f camDir;
+            m3dSubtractVectors3(camDir, cameraPos, planePos);
+            m3dNormalizeVector(camDir);
+            lightingShader->setUniform("SunDirection", UNI_VEC_3, camDir);
         } else {
-            f22->display(model_view, -1);
+            lightingShader->setUniform("SunDirection", UNI_VEC_3, sun);
         }
+        GLint model_view_loc = lightingShader->uniformLocation("ModelViewMatrix");
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        lightingShader->setUniform("sampler0", UNI_TEXTURE, nullptr, 1, GL_FALSE, 0);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, shadow_texture);
+        lightingShader->setUniform("sampler1", UNI_TEXTURE, nullptr, 1, GL_FALSE, 1);
+        f22->display(model_view, model_view_loc);
     }
     
     glUseProgram(0);
-    if (!isWindTunnelMode && isShowingClouds) {
+    if (!isWindTunnelMode) {
         skyShader->use();
         skyShader->setUniform("windowWidth", UNI_INT_1, &windowWidth);
         skyShader->setUniform("windowHeight", UNI_INT_1, &windowHeight);
@@ -275,9 +256,8 @@ void RenderScene(void)
         glColor3f(0.68f, 0.75f, 0.85f);
         glPushMatrix();
         glTranslatef(cameraPos[0], cameraPos[1], cameraPos[2]);
-        M3DMatrix44f mv;
-        glGetFloatv(GL_MODELVIEW_MATRIX, mv);
-        glUniformMatrix4fv(model_view_loc, 1, GL_FALSE, &mv[0]);
+        glGetFloatv(GL_MODELVIEW_MATRIX, model_view);
+        glUniformMatrix4fv(model_view_loc, 1, GL_FALSE, &model_view[0]);
         glutSolidSphere(14900.0f, 100, 100);
         glPopMatrix();
     }
@@ -337,8 +317,6 @@ void ProcessMenu(int value)
     case 5: sim_time = 0; f22->reinitEquilibrium(windVelocity); ReloadShaders(false); break;
     case 10: isShowingForce = !isShowingForce; break;
     case 11: isShowingF22 = !isShowingF22; break;
-    case 15: isShowingLighting = !isShowingLighting; break;
-    case 16: isShowingClouds = !isShowingClouds; break;
     case 13: ReloadShaders(false); break;
     case 20: windVelocity[0] += 10.0f; f22->reinitEquilibrium(windVelocity); break;
     case 21: windVelocity[0] -= 10.0f; f22->reinitEquilibrium(windVelocity); break;
@@ -390,8 +368,6 @@ void SetupRC()
     int nVisMenu = glutCreateMenu(ProcessMenu);
     glutAddMenuEntry("Toggle Force Vectors (F2)", 10);
     glutAddMenuEntry("Toggle Streamlines (F4)", 11);
-    glutAddMenuEntry("Toggle Lighting (F7)", 15);
-    glutAddMenuEntry("Toggle Clouds (F8)", 16);
     glutAddMenuEntry("Reload Shaders (F3)", 13);
     int nWindMenu = glutCreateMenu(ProcessMenu);
     glutAddMenuEntry("Increase Speed (+10)", 20);
@@ -459,8 +435,6 @@ void SpecialKeys(int key, int x, int y)
             f22->reinitEquilibrium(windVelocity);
             running = true; 
         } break;
-    case GLUT_KEY_F7: isShowingLighting = !isShowingLighting; break;
-    case GLUT_KEY_F8: isShowingClouds = !isShowingClouds; break;
     case GLUT_KEY_PAGE_UP: { M3DVector3f d={0,0,10.0}; f22->setDisplacement(d); } break;
     case GLUT_KEY_PAGE_DOWN: { M3DVector3f d={0,0,-10.0}; f22->setDisplacement(d); } break;
     }
@@ -476,12 +450,7 @@ void idle()
     m3dScaleVector3(sun, 0.5);
     m3dNormalizeVector(sun);
     if (running) {
-        if (isWindTunnelMode) {
-            // In Wind Tunnel mode, we use single-step to match aircraft_test cadence
-            f22->updatePhysicStep(isWindTunnelMode, windVelocity);
-        } else {
-            f22->updatePhysic(isWindTunnelMode, windVelocity);
-        }
+        f22->updatePhysic(isWindTunnelMode, windVelocity);
     }
     cameraPos[0] = cameraPos[0]*0.9 + targetCamPos[0]*0.1;
     cameraPos[1] = cameraPos[1]*0.9 + targetCamPos[1]*0.1;

@@ -7,7 +7,6 @@ layout(std430, binding = 1) buffer f_out_buf { float f_out[]; };
 
 layout(r8ui, binding = 3) uniform readonly uimage3D solid_img;
 
-
 uniform float tau;
 uniform float SmagorinskyConstant;
 
@@ -68,6 +67,7 @@ void main() {
     }
 
     // Stochastic Perturbation to break symmetry and trigger turbulence
+    // High-frequency noise based on position and time (using stride as a proxy for index-based entropy)
     float noise = fract(sin(dot(vec3(pos), vec3(12.9898, 78.233, 45.164))) * 43758.5453);
     u += u * (noise - 0.5) * 0.001; 
 
@@ -99,6 +99,7 @@ void main() {
         tau_eff = 0.5 * (tau + sqrt(tau * tau + 18.0 * SmagorinskyConstant * SmagorinskyConstant * Pi_mag / rho));
     }
     
+    // Clamp relaxation time (Rule 6.3)
     tau_eff = clamp(tau_eff, 0.51, 2.0);
 
     for (int i = 0; i < 19; i++) {

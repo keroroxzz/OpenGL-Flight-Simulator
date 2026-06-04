@@ -6,7 +6,6 @@ layout(std430, binding = 0) buffer f_in_buf { float f_in[]; };
 layout(std430, binding = 1) buffer f_out_buf { float f_out[]; };
 layout(r8ui, binding = 3) uniform readonly uimage3D solid_img;
 
-
 uniform vec3 u_wind;
 
 const ivec3 c[19] = ivec3[](
@@ -40,6 +39,9 @@ void main() {
     for (int i = 0; i < 19; i++) {
         ivec3 prev_pos = pos - c[i];
         
+        // Universal Boundary Condition: If pulling from ANYWHERE outside the grid, 
+        // inject equilibrium distributions based on global wind.
+        // This is much more stable than simple copying for external flows.
         if (prev_pos.x < 0 || prev_pos.x >= size.x || 
             prev_pos.y < 0 || prev_pos.y >= size.y || 
             prev_pos.z < 0 || prev_pos.z >= size.z) {
@@ -49,9 +51,11 @@ void main() {
             float cu = dot(vec3(c[i]), u_wind);
             f_in[i * stride + idx] = w[i] * rho * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
         }
+        // Solid Bounce-back (Half-way)
         else if (imageLoad(solid_img, prev_pos).r != 0) {
             f_in[i * stride + idx] = f_out[opposite[i] * stride + idx];
         } 
+        // Normal streaming from internal neighbor
         else {
             int prev_idx = (prev_pos.z * size.y * size.x + prev_pos.y * size.x + prev_pos.x);
             f_in[i * stride + idx] = f_out[i * stride + prev_idx];
