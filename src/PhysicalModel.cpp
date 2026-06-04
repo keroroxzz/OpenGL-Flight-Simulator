@@ -563,21 +563,17 @@ void Aerofoil::applyEffect(DynamicModel *base)
 {
     M3DVector3f force;
     float dot, forceMag;
-    extern M3DVector3f windVelocity;
 
-    // True Air Speed vector (velocity of aircraft through the air)
-    M3DVector3f TAS;
-    m3dSubtractVectors3(TAS, wvel, windVelocity);
-
-    // Project TAS into local coordinate system
-    float vx = m3dDotProduct(TAS, &waxis[0]); // Forward component
-    float vy = m3dDotProduct(TAS, &waxis[4]); // Side component
-    float vz = m3dDotProduct(TAS, &waxis[8]); // Up component
+    // Relative wind in world coord is -wvel
+    // Project velocity into local coordinate system
+    float vx = m3dDotProduct(wvel, &waxis[0]); // Forward
+    float vy = m3dDotProduct(wvel, &waxis[4]); // Side
+    float vz = m3dDotProduct(wvel, &waxis[8]); // Up
 
     float speedSq = vx*vx + vy*vy + vz*vz;
     float speed = sqrtf(speedSq);
 
-    // Calculate AoA (angle between TAS and forward axis in the XZ plane)
+    // Calculate AoA (angle between velocity and forward axis in the XZ plane)
     float aoa = 0.0f;
     if (speed > 0.1f) {
         aoa = atan2f(-vz, vx); 
@@ -602,7 +598,7 @@ void Aerofoil::applyEffect(DynamicModel *base)
     // Parasitic drag for each axis
     for (int i = 0; i < 3; i++)
     {
-        dot = m3dDotProduct(TAS, &waxis[i*4]);
+        dot = m3dDotProduct(wvel, &waxis[i*4]);
         forceMag = 0.5f * dot * dot * AIR_DENSITY * dragCoeff[i] * area[i];
         forceMag *= (dot > 0 ? -1.0f : 1.0f);
 
@@ -614,7 +610,7 @@ void Aerofoil::applyEffect(DynamicModel *base)
     // Induced drag (simplified: proportional to cl^2)
     float inducedDragCoeff = 0.1f; 
     float inducedDragMag = 0.5f * speedSq * AIR_DENSITY * (cl * cl * inducedDragCoeff) * area[2];
-    m3dCopyVector3(force, TAS);
+    m3dCopyVector3(force, wvel);
     if (speed > 0.1f) {
         m3dScaleVector3(force, -inducedDragMag / speed);
         base->applyForce(wpos, force);
@@ -622,11 +618,8 @@ void Aerofoil::applyEffect(DynamicModel *base)
 }
 
 float Aerofoil::getAoA() {
-    extern M3DVector3f windVelocity;
-    M3DVector3f TAS;
-    m3dSubtractVectors3(TAS, wvel, windVelocity);
-    float vx = m3dDotProduct(TAS, &waxis[0]);
-    float vz = m3dDotProduct(TAS, &waxis[8]);
+    float vx = m3dDotProduct(wvel, &waxis[0]);
+    float vz = m3dDotProduct(wvel, &waxis[8]);
     return atan2f(-vz, vx);
 }
 

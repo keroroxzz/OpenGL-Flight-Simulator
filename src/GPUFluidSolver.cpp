@@ -152,7 +152,7 @@ void GPUFluidSolver::step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxi
     dispatchReconstruct(); 
     glMemoryBarrier(GL_ALL_BARRIER_BITS);
     
-    dispatchParticleAdvect(dt, planeVel, planePos, planeWaxis, simTime); 
+    dispatchParticleAdvect(dt, planePos, planeWaxis, simTime); 
     glMemoryBarrier(GL_ALL_BARRIER_BITS);
     
     dispatchForceCompute(); 
@@ -223,7 +223,7 @@ void GPUFluidSolver::dispatchReconstruct() {
     glDispatchCompute(NX/8, NY/8, NZ/8); 
 }
 
-void GPUFluidSolver::dispatchParticleAdvect(float dt, M3DVector3f planeVel, M3DVector3f planePos_arg, M3DMatrix44f planeWaxis, float simTime) {
+void GPUFluidSolver::dispatchParticleAdvect(float dt, M3DVector3f planePos_arg, M3DMatrix44f planeWaxis, float simTime) {
     if (!particleAdvectShader) return; 
     particleAdvectShader->use();
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleSSBO);
@@ -232,7 +232,6 @@ void GPUFluidSolver::dispatchParticleAdvect(float dt, M3DVector3f planeVel, M3DV
     glBindImageTexture(2, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
     M3DVector3f worldGridMin, worldGridMax; m3dAddVectors3(worldGridMin, planePos_arg, gridMin); m3dAddVectors3(worldGridMax, planePos_arg, gridMax);
     particleAdvectShader->setUniform("dt", UNI_FLOAT_1, &dt); particleAdvectShader->setUniform("gridMin", UNI_VEC_3, worldGridMin); particleAdvectShader->setUniform("gridMax", UNI_VEC_3, worldGridMax);
-    particleAdvectShader->setUniform("gridVel", UNI_VEC_3, planeVel);
     M3DVector3f spawnPos; m3dCopyVector3(spawnPos, planePos_arg); spawnPos[0] += gridMin[0] + 0.5f; 
     particleAdvectShader->setUniform("spawnPos", UNI_VEC_3, spawnPos);
     M3DVector3f spawnRange = {0.5f, 16.0f, 16.0f}; particleAdvectShader->setUniform("spawnRange", UNI_VEC_3, spawnRange);
