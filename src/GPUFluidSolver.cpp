@@ -282,6 +282,7 @@ void GPUFluidSolver::drawParticles(M3DMatrix44f mvp, M3DVector3f planePos) {
     glDisableClientState(GL_VERTEX_ARRAY); glDisableClientState(GL_NORMAL_ARRAY); glDisableClientState(GL_TEXTURE_COORD_ARRAY); glDisableClientState(GL_COLOR_ARRAY);
     glLineWidth(1.0f); glDrawArrays(GL_LINES, 0, numParticles * 2);
     glEnable(GL_DEPTH_TEST); glDepthMask(GL_TRUE); glDisable(GL_BLEND); glBindVertexArray(0);
+    glUseProgram(0);
 }
 
 void GPUFluidSolver::clearSolid() {
