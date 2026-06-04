@@ -79,3 +79,19 @@ Pass `gridVel` (aircraft velocity) to the `particle_advect.comp` shader and upda
 ### Consequences
 - Particles now maintain consistent world-space positions when the grid moves.
 - Visualization in Wind Tunnel mode correctly shows particles moving at the speed of the injected wind.
+
+---
+
+## ADR 6: Prevent Shader State Leakage in Fluid Renderer
+**Date**: 2026-06-05
+**Status**: Accepted
+
+### Context
+In Wind Tunnel mode, unwanted triangles were appearing between particles. This was caused by the `particleRenderShader` remaining active after `GPUFluidSolver::drawParticles`. Subsequent draw calls for UI elements or debugging spheres (which use `GL_TRIANGLES`) were being processed by the particle shader, which interprets vertex IDs as indices into the global particle buffer.
+
+### Decision
+Explicitly call `glUseProgram(0)` at the end of all standalone rendering methods in the fluid solver, particularly `drawParticles`.
+
+### Consequences
+- Prevents visual artifacts in subsequent rendering passes.
+- Ensures robust interoperability between different rendering modules (HUD, visualization, and main scene).
