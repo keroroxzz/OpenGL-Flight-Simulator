@@ -142,8 +142,7 @@ void RenderScene() {
     m3dMatrixMultiply44(mvp, projection, model_view);
     
     glBindVertexArray(testVAO);
-    M3DVector3f center = { 0, 0, 0 };
-    solver->drawParticles(mvp, center);
+    solver->drawParticles(mvp);
 
     glutSwapBuffers();
 }

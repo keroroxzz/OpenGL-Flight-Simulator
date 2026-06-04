@@ -69,13 +69,13 @@ void UpdateCameraPose()
     M3DVector3f nv, newZ;
     f22->getPosition(planePos);
     
-    // Camera focus should ALWAYS follow the plane's world position
-    m3dCopyVector3(cameraFocus, planePos);
+    if (!isWindTunnelMode) {
+        m3dCopyVector3(cameraFocus, planePos);
+    }
 
     if (std::isnan(planePos[0]) || std::isnan(planePos[1]) || std::isnan(planePos[2])) {
         M3DVector3f zero = {0,0,0};
         f22->setPosition(zero);
-        m3dCopyVector3(cameraFocus, zero);
         return;
     }
 

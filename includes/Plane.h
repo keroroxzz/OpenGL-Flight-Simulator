@@ -29,9 +29,7 @@ public:
 	F22();
 
 	void updatePhysic(bool windTunnel = false, M3DVector3f wind = nullptr);
-	void updatePhysicStep(bool windTunnel = false, M3DVector3f wind = nullptr);
-	void updateLBMTest(M3DVector3f wind);
-
+    void updateLBMTest(M3DVector3f wind);
     void reinitEquilibrium(M3DVector3f wind);
 
 	void display(M3DMatrix44f cvmatrix, GLint model_view_loc=-1);

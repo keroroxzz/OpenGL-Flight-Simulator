@@ -33,7 +33,7 @@ class GPUFluidSolver {
 
     GLuint particleSSBO = 0;
     GLuint dummyVAO = 0;
-    int numParticles = 50000;
+    int numParticles = 200000;
 
     GLuint forceSSBO = 0;
     GLuint wakeCandidateSSBO = 0;
@@ -69,7 +69,7 @@ public:
     void voxelizeCylinder(M3DVector3f center, float radius, float height, int axis);
     void voxelizeGround(float groundZ);
 
-    void drawParticles(M3DMatrix44f mvp, M3DVector3f planePos);
+    void drawParticles(M3DMatrix44f mvp);
     void resetParticles();
 
     GLuint getVelocityTexture() { return velocityTexture; }
@@ -78,7 +78,7 @@ public:
     void dispatchCollision();
     void dispatchStream();
     void dispatchReconstruct();
-    void dispatchParticleAdvect(float dt, M3DVector3f planeVel, M3DVector3f planePos, M3DMatrix44f planeWaxis, float simTime);
+    void dispatchParticleAdvect(float dt, M3DVector3f planePos, M3DMatrix44f planeWaxis, float simTime);
     void dispatchForceCompute();
     void dispatchWakeExtract(float dt, M3DMatrix44f planeWaxis, M3DVector3f planePos);
     void dispatchWakeInject(M3DVector3f planePos);
