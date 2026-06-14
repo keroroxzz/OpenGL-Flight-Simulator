@@ -6,6 +6,7 @@ layout(r8ui, binding = 1) uniform uimage3D solid_img;
 
 uniform vec3 gridMin;
 uniform vec3 gridMax;
+uniform vec3 gridOrigin;
 uniform float groundZ;
 
 void main() {
@@ -13,10 +14,10 @@ void main() {
     ivec3 size = imageSize(solid_img);
     if (pos.x >= size.x || pos.y >= size.y || pos.z >= size.z) return;
 
-    vec3 worldPos = gridMin + (vec3(pos) / vec3(size)) * (gridMax - gridMin);
+    vec3 relPos = gridMin + (vec3(pos) / vec3(size)) * (gridMax - gridMin);
     
-    // Voxelize everything below groundZ
-    if (worldPos.z <= groundZ) {
+    // Voxelize everything below groundZ in world space
+    if (relPos.z + gridOrigin.z <= groundZ) {
         imageStore(solid_img, pos, uvec4(1));
     }
 }

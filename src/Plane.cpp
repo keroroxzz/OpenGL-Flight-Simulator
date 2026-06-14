@@ -166,22 +166,12 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
     extern float dt;
     extern float sim_time;
     
-    gpuFluidSolver->clearSolid();
-
-    M3DVector3f bboxMin = { 1e10f, 1e10f, 1e10f };
-    M3DVector3f bboxMax = { -1e10f, -1e10f, -1e10f };
-    M3DMatrix44f identity;
-    m3dLoadIdentity44(identity);
-    plane->getLocalBounds(bboxMin, bboxMax, identity);
-
-    bboxMin[0] -= 15.0f; bboxMax[0] += 10.0f;
-    bboxMin[1] -= 6.0f; bboxMax[1] += 6.0f;
-    bboxMin[2] -= 6.0f; bboxMax[2] += 6.0f;
+    // Fixed size box for LBM grid stability (32m x 16m x 16m)
+    M3DVector3f bboxMin = { -20.0f, -8.0f, -8.0f };
+    M3DVector3f bboxMax = { 12.0f, 8.0f, 8.0f };
     
     float groundZ = 0.0f;
-    if (plane->wpos[2] + bboxMin[2] < groundZ + 2.0f) {
-        bboxMin[2] = groundZ - plane->wpos[2];
-    }
+    M3DVector3f worldBBoxMin, worldBBoxMax;
 
     // Calculate local wind in lattice units for proper grid shift initialization
     M3DVector3f relWindPhys;
@@ -189,7 +179,7 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
     m3dSubtractVectors3(relWindPhys, windVelocity, plane->wvel);
 
     M3DVector3f localWindLattice = { 0.0f, 0.0f, 0.0f };
-    float dx_lbm = 0.25f;
+    float dx_lbm = 32.0f / 96.0f; // matches grid size
     float u_scale = dt / dx_lbm;
     localWindLattice[0] = relWindPhys[0] * u_scale;
     localWindLattice[1] = relWindPhys[1] * u_scale;
@@ -199,38 +189,41 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
         if (localWindLattice[i] < -0.15f) localWindLattice[i] = -0.15f;
     }
 
-    gpuFluidSolver->setGridBounds(bboxMin, bboxMax, localWindLattice);
-    m3dCopyVector3(gridOrigin, plane->wpos);
-    
-    if (plane->wpos[2] + bboxMin[2] <= groundZ + 0.1f) {
-        gpuFluidSolver->voxelizeGround(groundZ);
-    }
-
-    // Voxelize relative to grid origin (plane wpos)
-    M3DMatrix44f relTransform;
-    auto voxelizeRel = [&](ObjModel* model, M3DMatrix44f waxis) {
-        m3dCopyMatrix44(relTransform, waxis);
-        relTransform[12] -= gridOrigin[0];
-        relTransform[13] -= gridOrigin[1];
-        relTransform[14] -= gridOrigin[2];
-        gpuFluidSolver->voxelizePart(model, relTransform);
-    };
-
-    voxelizeRel(body_o, plane->waxis);
-    voxelizeRel(aileronL_o, aileronL->waxis);
-    voxelizeRel(aileronR_o, aileronR->waxis);
-    voxelizeRel(flapL_o, flapL->waxis);
-    voxelizeRel(flapR_o, flapR->waxis);
-    voxelizeRel(rudder_o, rudderL->waxis);
-    voxelizeRel(rudder_o, rudderR->waxis);
-    voxelizeRel(elevatorL_o, elevatorL->waxis);
-    voxelizeRel(elevatorR_o, elevatorR->waxis);
-
-    M3DMatrix44f invWaxis;
-
 	for (int i = 0; i < 10; i++)
 	{
+        // Update world-space grid bounds based on current plane position
+        m3dAddVectors3(worldBBoxMin, plane->wpos, bboxMin);
+        m3dAddVectors3(worldBBoxMax, plane->wpos, bboxMax);
+        gpuFluidSolver->setGridBounds(worldBBoxMin, worldBBoxMax, localWindLattice);
+        m3dCopyVector3(gridOrigin, plane->wpos);
+
+        gpuFluidSolver->clearSolid();
+        if (worldBBoxMin[2] <= groundZ + 0.1f) {
+            gpuFluidSolver->voxelizeGround(groundZ, plane->wpos);
+        }
+
+        // Voxelize relative to current grid origin (plane wpos)
+        M3DMatrix44f relTransform;
+        auto voxelizeRel = [&](ObjModel* model, M3DMatrix44f waxis) {
+            m3dCopyMatrix44(relTransform, waxis);
+            relTransform[12] -= plane->wpos[0];
+            relTransform[13] -= plane->wpos[1];
+            relTransform[14] -= plane->wpos[2];
+            gpuFluidSolver->voxelizePart(model, relTransform);
+        };
+
+        voxelizeRel(body_o, plane->waxis);
+        voxelizeRel(aileronL_o, aileronL->waxis);
+        voxelizeRel(aileronR_o, aileronR->waxis);
+        voxelizeRel(flapL_o, flapL->waxis);
+        voxelizeRel(flapR_o, flapR->waxis);
+        voxelizeRel(rudder_o, rudderL->waxis);
+        voxelizeRel(rudder_o, rudderR->waxis);
+        voxelizeRel(elevatorL_o, elevatorL->waxis);
+        voxelizeRel(elevatorR_o, elevatorR->waxis);
+
 		plane->updatePositionVelocity(plane);
+        M3DMatrix44f invWaxis;
         m3dInvertMatrix44(invWaxis, plane->waxis);
         
         if (!windTunnel) {
@@ -238,13 +231,16 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
             M3DVector3f gravityVec = { 0.0, 0.0, -12000.0 * 9.81 };
             plane->applyForce(gravityVec);
             M3DVector3f* cfdF = gpuFluidSolver->getCFDForce();
+            M3DVector3f* cfdT = gpuFluidSolver->getCFDTorque();
             
             // NaN Safety check
-            if (std::isnan((*cfdF)[0]) || std::isnan((*cfdF)[1]) || std::isnan((*cfdF)[2])) {
-                printf("[Plane] CFD Force is NaN! Resetting solver particles...\n");
+            if (std::isnan((*cfdF)[0]) || std::isnan((*cfdF)[1]) || std::isnan((*cfdF)[2]) ||
+                std::isnan((*cfdT)[0]) || std::isnan((*cfdT)[1]) || std::isnan((*cfdT)[2])) {
+                printf("[Plane] CFD Force/Torque is NaN! Resetting solver particles...\n");
                 gpuFluidSolver->resetParticles();
             } else {
                 plane->applyForce(*cfdF);
+                plane->applyTorque(*cfdT);
             }
             plane->updateDynamic();
         } else {

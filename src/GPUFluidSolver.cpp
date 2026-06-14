@@ -57,7 +57,7 @@ void GPUFluidSolver::initBuffers() {
     
     glGenVertexArrays(1, &dummyVAO);
     glGenBuffers(1, &particleSSBO); resetParticles(); 
-    glGenBuffers(1, &forceSSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, forceSSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, 16, nullptr, GL_DYNAMIC_COPY);
+    glGenBuffers(1, &forceSSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, forceSSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, 32, nullptr, GL_DYNAMIC_COPY);
     glGenBuffers(1, &wakeCandidateSSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeCandidateSSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float)*8*1024, nullptr, GL_DYNAMIC_COPY);
     glGenBuffers(1, &wakeCounterBuffer); glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeCounterBuffer); glBufferData(GL_SHADER_STORAGE_BUFFER, 4, nullptr, GL_DYNAMIC_COPY);
     glGenBuffers(1, &wakeSSBO); glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeSSBO); glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float)*12*1024, nullptr, GL_DYNAMIC_DRAW);
@@ -103,7 +103,7 @@ void GPUFluidSolver::reinitEquilibrium(M3DVector3f physVel) {
 }
 
 void GPUFluidSolver::setGridBounds(M3DVector3f min, M3DVector3f max, M3DVector3f localWind) {
-    M3DVector3f dx = { (gridMax[0]-gridMin[0])/NX, (gridMax[1]-gridMin[1])/NY, (gridMax[2]-gridMin[2])/NZ };
+    M3DVector3f dx = { (max[0]-min[0])/NX, (max[1]-min[1])/NY, (max[2]-min[2])/NZ };
     int ox = (int)round((min[0]-prevGridMin[0])/dx[0]), oy = (int)round((min[1]-prevGridMin[1])/dx[1]), oz = (int)round((min[2]-prevGridMin[2])/dx[2]);
     if (ox != 0 || oy != 0 || oz != 0) { 
         dispatchShift(ox, oy, oz, localWind); 
@@ -124,7 +124,9 @@ void GPUFluidSolver::dispatchShift(int ox, int oy, int oz, M3DVector3f localWind
 
 void GPUFluidSolver::step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxis, M3DVector3f planePos, float simTime) {
     lastDt = dt;
-    float dx = 0.25f, u_scale = dt / dx;
+    // dx for u_scale should be consistent with the 32m / 96 cells ratio
+    float dx_scale = 32.0f / 96.0f;
+    float u_scale = dt / dx_scale;
     extern M3DVector3f windVelocity; M3DVector3f relWindPhys; m3dSubtractVectors3(relWindPhys, windVelocity, planeVel);
     M3DVector3f localWindLattice = { relWindPhys[0]*u_scale, relWindPhys[1]*u_scale, relWindPhys[2]*u_scale };
     for(int i=0; i<3; i++) { if(localWindLattice[i]>0.15f) localWindLattice[i]=0.15f; if(localWindLattice[i]<-0.15f) localWindLattice[i]=-0.15f; }
@@ -134,6 +136,20 @@ void GPUFluidSolver::step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxi
         vortexPhysicsShader->setUniform("u_globalWind", UNI_VEC_3, windVelocity);
         int maxV = 1024; vortexPhysicsShader->setUniform("u_maxVortices", UNI_INT_1, &maxV);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, wakeSSBO); glDispatchCompute(maxV/128, 1, 1); glMemoryBarrier(GL_ALL_BARRIER_BITS);
+        
+        // Sync back to CPU WakeManager to preserve GPU physics
+        struct GPUWake { float pos[4]; float dir_circ[4]; float params[4]; }; std::vector<GPUWake> gpuVortices(1024);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeSSBO); glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 1024*48, gpuVortices.data());
+        
+        wakeManager.clear();
+        for (const auto& gv : gpuVortices) {
+            if (gv.pos[3] > 0.0f && gv.params[2] < 20.0f) { // Active and not expired
+                WakeVortex v; m3dCopyVector3(v.position, gv.pos); m3dCopyVector3(v.direction, gv.dir_circ);
+                v.circulation = gv.dir_circ[3]; v.radius = gv.params[0]; v.turbulence = gv.params[1];
+                v.age = gv.params[2]; v.decayRate = gv.params[3];
+                wakeManager.addVortex(v);
+            }
+        }
     }
     
     dispatchWakeInject(planePos); 
@@ -170,10 +186,10 @@ void GPUFluidSolver::step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxi
             for (int i=0; i<19; i++) for (int j=0; j<size; j++) initial_f[i*size+j] = w[i];
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, f_in_SSBO); glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, initial_f.size()*sizeof(float), initial_f.data());
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, f_out_SSBO); glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, initial_f.size()*sizeof(float), initial_f.data());
-            resetParticles(); filteredForce[0] = filteredForce[1] = filteredForce[2] = 0.0f;
+            resetParticles(); filteredForce[0] = filteredForce[1] = filteredForce[2] = 0.0f; filteredTorque[0] = filteredTorque[1] = filteredTorque[2] = 0.0f;
         }
     }
-    wakeManager.update(dt);
+    // wakeManager.update(dt); // No longer needed as GPU handles physics
 }
 
 void GPUFluidSolver::debugUniformVelocity(M3DVector3f vel) {
@@ -230,10 +246,12 @@ void GPUFluidSolver::dispatchParticleAdvect(float dt, M3DVector3f planeVel, M3DV
     glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_3D, velocityTexture);
     GLint samplerLoc = glGetUniformLocation(particleAdvectShader->getProgram(), "velocity_tex"); glUniform1i(samplerLoc, 0);
     glBindImageTexture(2, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
-    M3DVector3f worldGridMin, worldGridMax; m3dAddVectors3(worldGridMin, planePos_arg, gridMin); m3dAddVectors3(worldGridMax, planePos_arg, gridMax);
-    particleAdvectShader->setUniform("dt", UNI_FLOAT_1, &dt); particleAdvectShader->setUniform("gridMin", UNI_VEC_3, worldGridMin); particleAdvectShader->setUniform("gridMax", UNI_VEC_3, worldGridMax);
+    particleAdvectShader->setUniform("dt", UNI_FLOAT_1, &dt); 
+    particleAdvectShader->setUniform("gridMin", UNI_VEC_3, gridMin); 
+    particleAdvectShader->setUniform("gridMax", UNI_VEC_3, gridMax);
     particleAdvectShader->setUniform("gridVel", UNI_VEC_3, planeVel);
-    M3DVector3f spawnPos; m3dCopyVector3(spawnPos, planePos_arg); spawnPos[0] += gridMin[0] + 0.5f; 
+    
+    M3DVector3f spawnPos; m3dCopyVector3(spawnPos, planePos_arg); spawnPos[0] += -18.0f; 
     particleAdvectShader->setUniform("spawnPos", UNI_VEC_3, spawnPos);
     M3DVector3f spawnRange = {0.5f, 16.0f, 16.0f}; particleAdvectShader->setUniform("spawnRange", UNI_VEC_3, spawnRange);
     particleAdvectShader->setUniform("iTime", UNI_FLOAT_1, &simTime);
@@ -246,12 +264,16 @@ void GPUFluidSolver::dispatchForceCompute() {
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, f_in_SSBO); glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, f_out_SSBO);
     glBindImageTexture(3, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, forceSSBO);
-    int zero[4] = {0,0,0,0}; glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 16, zero);
+    int zero[8] = {0,0,0,0,0,0,0,0}; glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 32, zero);
     glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
-    int forceData[4]; glBindBuffer(GL_SHADER_STORAGE_BUFFER, forceSSBO); glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 16, forceData);
+    int forceData[8]; glBindBuffer(GL_SHADER_STORAGE_BUFFER, forceSSBO); glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 32, forceData);
     float scale_val = 1e-6f, alpha = 0.08f;
     cfdForce[0] = forceData[0]*scale_val; cfdForce[1] = forceData[1]*scale_val; cfdForce[2] = forceData[2]*scale_val;
     filteredForce[0] = filteredForce[0]*(1.0f-alpha) + cfdForce[0]*alpha; filteredForce[1] = filteredForce[1]*(1.0f-alpha) + cfdForce[1]*alpha; filteredForce[2] = filteredForce[2]*(1.0f-alpha) + cfdForce[2]*alpha;
+
+    M3DVector3f cfdTorque;
+    cfdTorque[0] = forceData[4]*scale_val; cfdTorque[1] = forceData[5]*scale_val; cfdTorque[2] = forceData[6]*scale_val;
+    filteredTorque[0] = filteredTorque[0]*(1.0f-alpha) + cfdTorque[0]*alpha; filteredTorque[1] = filteredTorque[1]*(1.0f-alpha) + cfdTorque[1]*alpha; filteredTorque[2] = filteredTorque[2]*(1.0f-alpha) + cfdTorque[2]*alpha;
 }
 
 void GPUFluidSolver::dispatchWakeExtract(float dt, M3DMatrix44f planeWaxis, M3DVector3f planePos) {
@@ -261,8 +283,8 @@ void GPUFluidSolver::dispatchWakeExtract(float dt, M3DMatrix44f planeWaxis, M3DV
     glBindImageTexture(2, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, wakeCandidateSSBO); glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, wakeCounterBuffer);
     uint32_t zero_cnt = 0; glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 4, &zero_cnt);
-    M3DVector3f worldGridMin, worldGridMax; m3dAddVectors3(worldGridMin, planePos, gridMin); m3dAddVectors3(worldGridMax, planePos, gridMax);
-    wakeExtractShader->setUniform("gridMin", UNI_VEC_3, worldGridMin); wakeExtractShader->setUniform("gridMax", UNI_VEC_3, worldGridMax);
+    wakeExtractShader->setUniform("gridMin", UNI_VEC_3, gridMin); 
+    wakeExtractShader->setUniform("gridMax", UNI_VEC_3, gridMax);
     glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
     uint32_t count; glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeCounterBuffer); glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 4, &count);
     if (count > 1024) count = 1024;
@@ -287,7 +309,9 @@ void GPUFluidSolver::dispatchWakeInject(M3DVector3f planePos) {
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, wakeSSBO); 
     glBindImageTexture(3, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
     unsigned int count = (unsigned int)gpuVortices.size(); wakeInjectShader->setUniform("numVortices", UNI_INT_1, &count);
-    float u_scale = 0.001f / 0.25f; wakeInjectShader->setUniform("u_scale", UNI_FLOAT_1, &u_scale);
+    float dx = 0.25f;
+    float u_scale = lastDt / dx; 
+    wakeInjectShader->setUniform("u_scale", UNI_FLOAT_1, &u_scale);
     M3DVector3f worldGridMin, worldGridMax; m3dAddVectors3(worldGridMin, planePos, gridMin); m3dAddVectors3(worldGridMax, planePos, gridMax);
     wakeInjectShader->setUniform("gridMin", UNI_VEC_3, worldGridMin); wakeInjectShader->setUniform("gridMax", UNI_VEC_3, worldGridMax);
     glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
@@ -335,7 +359,7 @@ void GPUFluidSolver::voxelizePart(ObjModel* model, M3DMatrix44f worldTransform) 
     glDispatchCompute(nTri / 64 + 1, 1, 1); glMemoryBarrier(GL_ALL_BARRIER_BITS);
 }
 
-void GPUFluidSolver::voxelizeAircraft(F22* aircraft) {}
+void GPUFluidSolver::voxelizeAircraft(F22* aircraft, M3DVector3f gridOrigin) {}
 
 void GPUFluidSolver::voxelizeCylinder(M3DVector3f center, float radius, float height, int axis) {
     if (!voxelizeCylinderShader) return;
@@ -347,10 +371,11 @@ void GPUFluidSolver::voxelizeCylinder(M3DVector3f center, float radius, float he
     glDispatchCompute(NX / 8, NY / 8, NZ / 8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
 }
 
-void GPUFluidSolver::voxelizeGround(float groundZ) {
+void GPUFluidSolver::voxelizeGround(float groundZ, M3DVector3f gridOrigin_) {
     if (!voxelizeGroundShader) return;
     voxelizeGroundShader->use(); glBindImageTexture(1, solidTexture, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R8UI);
     voxelizeGroundShader->setUniform("gridMin", UNI_VEC_3, gridMin); voxelizeGroundShader->setUniform("gridMax", UNI_VEC_3, gridMax);
+    voxelizeGroundShader->setUniform("gridOrigin", UNI_VEC_3, gridOrigin_);
     voxelizeGroundShader->setUniform("groundZ", UNI_FLOAT_1, &groundZ);
     glDispatchCompute(NX / 8, NY / 8, NZ / 8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
 }

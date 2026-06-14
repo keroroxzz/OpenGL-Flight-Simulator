@@ -43,33 +43,26 @@ void main() {
 
     float f[19];
     float rho = 0.0;
-    vec3 u = vec3(0.0);
+    vec3 j = vec3(0.0); // Momentum
 
     for(int i=0; i<19; i++) {
         f[i] = f_in[i * stride + idx];
         rho += f[i];
-        u += f[i] * c[i];
+        j += f[i] * c[i];
     }
 
-    if (rho > 0.01) {
-        u /= rho;
-    } else {
-        rho = 1.0;
-        u = vec3(0.0);
-    }
+    // Standard density/velocity calculation
+    vec3 u = j / max(rho, 0.0001);
     
-    rho = clamp(rho, MIN_DENSITY, MAX_DENSITY);
+    // Density Normalization: Force density back toward 1.0 to prevent runaway oscillations
+    // This is a common technique for stabilizing LBM at high Reynolds numbers.
+    rho = mix(rho, 1.0, 0.05);
 
-    // Enforce Mach Limit (Rule 6.4)
+    // Safety clamp for extreme cases (Mach Limit)
     float speed = length(u);
     if (speed > MAX_VELOCITY) {
         u = (u / speed) * MAX_VELOCITY;
     }
-
-    // Stochastic Perturbation to break symmetry and trigger turbulence
-    // High-frequency noise based on position and time (using stride as a proxy for index-based entropy)
-    float noise = fract(sin(dot(vec3(pos), vec3(12.9898, 78.233, 45.164))) * 43758.5453);
-    u += u * (noise - 0.5) * 0.001; 
 
     float u2 = dot(u, u);
     float feq[19];
@@ -78,29 +71,34 @@ void main() {
         feq[i] = w[i] * rho * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
     }
 
-    float tau_eff = tau;
-    if (SmagorinskyConstant > 0.0) {
-        mat3 Q = mat3(0.0);
-        for (int i = 0; i < 19; i++) {
-            float fi_neq = f[i] - feq[i];
-            Q[0][0] += fi_neq * c[i].x * c[i].x;
-            Q[0][1] += fi_neq * c[i].x * c[i].y;
-            Q[0][2] += fi_neq * c[i].x * c[i].z;
-            Q[1][1] += fi_neq * c[i].y * c[i].y;
-            Q[1][2] += fi_neq * c[i].y * c[i].z;
-            Q[2][2] += fi_neq * c[i].z * c[i].z;
-        }
-        Q[1][0] = Q[0][1]; Q[2][0] = Q[0][2]; Q[2][1] = Q[1][2];
-        
-        float Pi_mag = 0.0;
-        for(int i=0; i<3; i++) for(int j=0; j<3; j++) Pi_mag += Q[i][j] * Q[i][j];
-        Pi_mag = sqrt(Pi_mag);
-        
-        tau_eff = 0.5 * (tau + sqrt(tau * tau + 18.0 * SmagorinskyConstant * SmagorinskyConstant * Pi_mag / rho));
-    }
+    // Dynamic Viscosity (LES Smagorinsky Model)
+    float tau_base = max(tau, 0.8); // Higher base tau for stability
+    float tau_eff = tau_base;
     
-    // Clamp relaxation time (Rule 6.3)
-    tau_eff = clamp(tau_eff, 0.51, 2.0);
+    // LES Constant: 0.1 to 0.2 is typical. Using 0.15 for balance.
+    float Cs = 0.15; 
+    
+    mat3 Q = mat3(0.0);
+    for (int i = 0; i < 19; i++) {
+        float fi_neq = f[i] - feq[i];
+        Q[0][0] += fi_neq * c[i].x * c[i].x;
+        Q[0][1] += fi_neq * c[i].x * c[i].y;
+        Q[0][2] += fi_neq * c[i].x * c[i].z;
+        Q[1][1] += fi_neq * c[i].y * c[i].y;
+        Q[1][2] += fi_neq * c[i].y * c[i].z;
+        Q[2][2] += fi_neq * c[i].z * c[i].z;
+    }
+    Q[1][0] = Q[0][1]; Q[2][0] = Q[0][2]; Q[2][1] = Q[1][2];
+    
+    float Pi_mag = 0.0;
+    for(int i=0; i<3; i++) for(int j=0; j<3; j++) Pi_mag += Q[i][j] * Q[i][j];
+    Pi_mag = sqrt(Pi_mag);
+    
+    // Effective relaxation time with turbulence
+    tau_eff = 0.5 * (tau_base + sqrt(tau_base * tau_base + 18.0 * Cs * Cs * Pi_mag / max(rho, 0.0001)));
+    
+    // Clamp tau to stable range
+    tau_eff = clamp(tau_eff, 0.8, 2.5);
 
     for (int i = 0; i < 19; i++) {
         f_out[i * stride + idx] = f[i] - (f[i] - feq[i]) / tau_eff;

@@ -7,7 +7,7 @@ layout(std430, binding = 1) buffer f_out_buf { float f_out[]; };
 layout(r8ui, binding = 3) uniform readonly uimage3D solid_img;
 
 layout(std430, binding = 4) buffer force_buf {
-    int total_force_int[4];
+    int total_force_int[8];
 };
 
 const ivec3 c[19] = ivec3[](
@@ -24,6 +24,7 @@ void main() {
     if (pos.x >= size.x || pos.y >= size.y || pos.z >= size.z) return;
 
     vec3 force = vec3(0.0);
+    vec3 torque = vec3(0.0);
     uint solid = imageLoad(solid_img, pos).r;
     
     if (solid == 0) { // Fluid cell
@@ -39,7 +40,12 @@ void main() {
                 if (imageLoad(solid_img, neighbor_pos).r != 0) {
                     // Momentum exchange: Force on solid = c_i * (f_out_i(fluid) + f_in_opp_i(fluid))
                     float fi = f_out[i * stride + idx];
-                    force += vec3(c[i]) * (2.0 * fi);
+                    vec3 localForce = vec3(c[i]) * (2.0 * fi);
+                    force += localForce;
+
+                    // Torque = r x f. Relative position in lattice units from grid center.
+                    vec3 r = vec3(pos) - vec3(size) * 0.5;
+                    torque += cross(r, localForce);
                 }
             }
         }
@@ -49,4 +55,8 @@ void main() {
     atomicAdd(total_force_int[0], int(force.x * scale));
     atomicAdd(total_force_int[1], int(force.y * scale));
     atomicAdd(total_force_int[2], int(force.z * scale));
+
+    atomicAdd(total_force_int[4], int(torque.x * scale));
+    atomicAdd(total_force_int[5], int(torque.y * scale));
+    atomicAdd(total_force_int[6], int(torque.z * scale));
 }

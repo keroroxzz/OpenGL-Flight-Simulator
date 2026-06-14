@@ -47,6 +47,7 @@ class GPUFluidSolver {
     M3DVector3f prevGridMin;
     M3DVector3f cfdForce = {0,0,0};
     M3DVector3f filteredForce = {0,0,0};
+    M3DVector3f filteredTorque = {0,0,0};
     float lastDt = 0.016f;
 
 public:
@@ -65,15 +66,16 @@ public:
     
     void clearSolid();
     void voxelizePart(class ObjModel* model, M3DMatrix44f worldTransform);
-    void voxelizeAircraft(class F22* aircraft);
+    void voxelizeAircraft(class F22* aircraft, M3DVector3f gridOrigin);
     void voxelizeCylinder(M3DVector3f center, float radius, float height, int axis);
-    void voxelizeGround(float groundZ);
+    void voxelizeGround(float groundZ, M3DVector3f gridOrigin);
 
     void drawParticles(M3DMatrix44f mvp);
     void resetParticles();
 
     GLuint getVelocityTexture() { return velocityTexture; }
     M3DVector3f* getCFDForce() { return &filteredForce; }
+    M3DVector3f* getCFDTorque() { return &filteredTorque; }
 
     void dispatchCollision();
     void dispatchStream();
