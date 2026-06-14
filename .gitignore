@@ -4,8 +4,21 @@ Makefile
 build/*
 CMakeFiles/*
 flight_sim/test_out/*
+
+# Executables
+flight_sim
+lbm_test
+particle_test
+aircraft_test
 flight_sim/flight_sim
 flight_sim/lbm_test
 flight_sim/particle_test
 flight_sim/aircraft_test
+
+# Objects and Libraries
+*.o
+*.a
+*.so
+*.out
+
 .vscode/*
