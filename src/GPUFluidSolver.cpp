@@ -33,6 +33,7 @@ GPUFluidSolver::~GPUFluidSolver() {
     delete voxelizeCylinderShader; delete particleAdvectShader; delete particleRenderShader;
     delete forceComputeShader; delete wakeExtractShader; delete wakeInjectShader;
     delete stabilityShader; delete shiftShader; delete vortexPhysicsShader; delete debugUniformVelShader;
+    delete solidDebugShader;
     delete reinitShader; delete clearSolidShader;
 }
 
@@ -85,6 +86,9 @@ void GPUFluidSolver::initShaders() {
     shiftShader = new Shader(1); shiftShader->addFromFile("shaders/compute/shift_grid.comp", GL_COMPUTE_SHADER);
     vortexPhysicsShader = new Shader(1); vortexPhysicsShader->addFromFile("shaders/compute/vortex_physics.comp", GL_COMPUTE_SHADER);
     debugUniformVelShader = new Shader(1); debugUniformVelShader->addFromFile("shaders/compute/debug_uniform_vel.comp", GL_COMPUTE_SHADER);
+    solidDebugShader = new Shader(2);
+    solidDebugShader->addFromFile("shaders/vertex/solid_debug.vs", GL_VERTEX_SHADER);
+    solidDebugShader->addFromFile("shaders/frag/solid_debug.fs", GL_FRAGMENT_SHADER);
     reinitShader = new Shader(1); reinitShader->addFromFile("shaders/compute/lbm_reinit.comp", GL_COMPUTE_SHADER);
     clearSolidShader = new Shader(1); clearSolidShader->addFromFile("shaders/compute/clear_solid.comp", GL_COMPUTE_SHADER);
 }
@@ -196,6 +200,27 @@ void GPUFluidSolver::debugUniformVelocity(M3DVector3f vel) {
     if (!debugUniformVelShader) return;
     debugUniformVelShader->use(); glBindImageTexture(1, velocityTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
     debugUniformVelShader->setUniform("u_vel", UNI_VEC_3, vel); glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
+}
+
+void GPUFluidSolver::drawSolidGrid(M3DMatrix44f mvp) {
+    if (!solidDebugShader) return;
+    solidDebugShader->use();
+    glBindVertexArray(dummyVAO);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_3D, solidTexture);
+    GLint samplerLoc = glGetUniformLocation(solidDebugShader->getProgram(), "solidTexture");
+    glUniform1i(samplerLoc, 0);
+
+    solidDebugShader->setUniform("gridMin", UNI_VEC_3, gridMin);
+    solidDebugShader->setUniform("gridMax", UNI_VEC_3, gridMax);
+    solidDebugShader->setUniform("modelViewProj", UNI_MATRIX_4, mvp);
+    int dims[3] = { NX, NY, NZ };
+    solidDebugShader->setUniform("gridSize", UNI_INT_3, dims);
+
+    glPointSize(2.0f);
+    glDrawArrays(GL_POINTS, 0, size);
+    glBindVertexArray(0);
+    glUseProgram(0);
 }
 
 void GPUFluidSolver::resetParticles() {

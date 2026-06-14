@@ -142,3 +142,18 @@ The LBM grid follows the aircraft, but inconsistent coordinate origins between s
 - Sharp, well-defined aircraft shape in the fluid field without smearing.
 - Full-volume particle distribution in Wind Tunnel mode.
 - Consistent physics across different simulation modes.
+
+## ADR 8: Hierarchical Linkage Synchronization for Voxelization
+**Date**: 2026-06-14
+**Status**: Accepted
+
+### Context
+Aircraft control surfaces (ailerons, elevators, etc.) are implemented as a hierarchy of joints. Previously, their world-space matrices (`waxis`) were only updated during the rendering pass. This meant that the voxelization step in the physics loop was using control surface positions that were one frame old, leading to delayed aerodynamic response.
+
+### Decision
+Move the call to `updatePositionVelocity` to the beginning of each 0.001s sub-stepping loop in `F22::updatePhysic`. This ensures that all hierarchical world matrices are recalculated based on the latest joint angles and base aircraft position *before* voxelization occurs.
+
+### Consequences
+- Voxelization now reflects the "real-time" status of all control surfaces in every sub-step.
+- Eliminates the 1-frame latency between pilot input and aerodynamic force changes.
+- Ensures physical consistency between the rigid body's visual state and its representation in the fluid grid.

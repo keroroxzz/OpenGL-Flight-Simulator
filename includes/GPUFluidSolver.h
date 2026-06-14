@@ -28,6 +28,7 @@ class GPUFluidSolver {
     Shader* shiftShader = nullptr;
     Shader* vortexPhysicsShader = nullptr;
     Shader* debugUniformVelShader = nullptr;
+    Shader* solidDebugShader = nullptr;
     Shader* reinitShader = nullptr;
     Shader* clearSolidShader = nullptr;
 
@@ -71,6 +72,7 @@ public:
     void voxelizeGround(float groundZ, M3DVector3f gridOrigin);
 
     void drawParticles(M3DMatrix44f mvp);
+    void drawSolidGrid(M3DMatrix44f mvp);
     void resetParticles();
 
     GLuint getVelocityTexture() { return velocityTexture; }

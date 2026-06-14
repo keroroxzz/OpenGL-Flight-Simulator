@@ -19,6 +19,7 @@
 bool showForce = true;
 bool isShowingForce = false;
 bool isShowingF22 = true;
+bool isShowingSolid = false;
 bool isWindTunnelMode = false;
 M3DVector3f windVelocity = {30.0f, 0.0f, 0.0f};
 
@@ -268,6 +269,9 @@ void RenderScene(void)
         f22->drawFlowField(model_view);
         f22->drawBoundingBox(model_view);
     }
+    if (isShowingSolid) {
+        f22->drawSolidGrid(model_view);
+    }
     if (isWindTunnelMode) DrawWindArrow(model_view);
     if (isShowingForce) {
         glPushMatrix();
@@ -317,6 +321,7 @@ void ProcessMenu(int value)
     case 5: sim_time = 0; f22->reinitEquilibrium(windVelocity); ReloadShaders(false); break;
     case 10: isShowingForce = !isShowingForce; break;
     case 11: isShowingF22 = !isShowingF22; break;
+    case 12: isShowingSolid = !isShowingSolid; break;
     case 13: ReloadShaders(false); break;
     case 20: windVelocity[0] += 10.0f; f22->reinitEquilibrium(windVelocity); break;
     case 21: windVelocity[0] -= 10.0f; f22->reinitEquilibrium(windVelocity); break;
@@ -368,6 +373,7 @@ void SetupRC()
     int nVisMenu = glutCreateMenu(ProcessMenu);
     glutAddMenuEntry("Toggle Force Vectors (F2)", 10);
     glutAddMenuEntry("Toggle Streamlines (F4)", 11);
+    glutAddMenuEntry("Toggle Solid Voxelization (F5)", 12);
     glutAddMenuEntry("Reload Shaders (F3)", 13);
     int nWindMenu = glutCreateMenu(ProcessMenu);
     glutAddMenuEntry("Increase Speed (+10)", 20);
@@ -427,6 +433,7 @@ void SpecialKeys(int key, int x, int y)
     case GLUT_KEY_F2: isShowingForce = !isShowingForce; break;
     case GLUT_KEY_F3: ReloadShaders(false); break;
     case GLUT_KEY_F4: isShowingF22 = !isShowingF22; break;
+    case GLUT_KEY_F5: isShowingSolid = !isShowingSolid; break;
     case GLUT_KEY_F6: 
         isWindTunnelMode = !isWindTunnelMode; 
         if (isWindTunnelMode) { 

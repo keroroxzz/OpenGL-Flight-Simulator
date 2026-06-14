@@ -97,6 +97,14 @@ void F22::drawFlowField(M3DMatrix44f cvmatrix)
     gpuFluidSolver->drawParticles(mvp);
 }
 
+void F22::drawSolidGrid(M3DMatrix44f cvmatrix)
+{
+    extern M3DMatrix44f projection;
+    M3DMatrix44f mvp;
+    m3dMatrixMultiply44(mvp, projection, cvmatrix);
+    gpuFluidSolver->drawSolidGrid(mvp);
+}
+
 void F22::drawBoundingBox(M3DMatrix44f cvmatrix)
 {
     M3DVector3f bMin, bMax;
@@ -191,7 +199,10 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
 
 	for (int i = 0; i < 10; i++)
 	{
-        // Update world-space grid bounds based on current plane position
+        // 1. Update hierarchical state (waxis, wpos, wvel) for all parts (including linkages)
+        plane->updatePositionVelocity(plane);
+
+        // 2. Update world-space grid bounds based on current plane position
         m3dAddVectors3(worldBBoxMin, plane->wpos, bboxMin);
         m3dAddVectors3(worldBBoxMax, plane->wpos, bboxMax);
         gpuFluidSolver->setGridBounds(worldBBoxMin, worldBBoxMax, localWindLattice);
@@ -202,7 +213,7 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
             gpuFluidSolver->voxelizeGround(groundZ, plane->wpos);
         }
 
-        // Voxelize relative to current grid origin (plane wpos)
+        // 3. Voxelize using CURRENT updated waxis (including control surface angles)
         M3DMatrix44f relTransform;
         auto voxelizeRel = [&](ObjModel* model, M3DMatrix44f waxis) {
             m3dCopyMatrix44(relTransform, waxis);
@@ -222,10 +233,10 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
         voxelizeRel(elevatorL_o, elevatorL->waxis);
         voxelizeRel(elevatorR_o, elevatorR->waxis);
 
-		plane->updatePositionVelocity(plane);
-        M3DMatrix44f invWaxis;
-        m3dInvertMatrix44(invWaxis, plane->waxis);
-        
+        // 4. Step the fluid simulation
+        gpuFluidSolver->step(dt, plane->wvel, plane->waxis, plane->wpos, sim_time);
+
+        // 5. Apply forces and advance rigid body dynamics
         if (!windTunnel) {
             thruster->applyEffect(plane);
             M3DVector3f gravityVec = { 0.0, 0.0, -12000.0 * 9.81 };
@@ -248,7 +259,6 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
             plane->angular_velocity[0] = plane->angular_velocity[1] = plane->angular_velocity[2] = 0.0f;
         }
 
-        gpuFluidSolver->step(dt, plane->wvel, plane->waxis, plane->wpos, sim_time);
         sim_time += dt;
 	}
 }
