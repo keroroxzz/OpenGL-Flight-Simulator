@@ -198,7 +198,7 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
         m3dCopyVector3(gridOrigin, plane->wpos);
 
         gpuFluidSolver->clearSolid();
-        if (worldBBoxMin[2] <= groundZ + 0.1f) {
+        if (!windTunnel && worldBBoxMin[2] <= groundZ + 0.1f) {
             gpuFluidSolver->voxelizeGround(groundZ, plane->wpos);
         }
 
