@@ -39,57 +39,44 @@ void main() {
     for (int i = 0; i < 19; i++) {
         ivec3 prev_pos = pos - c[i];
         
-        // OUTFLOW / INFLOW Boundary Conditions
         if (prev_pos.x < 0 || prev_pos.x >= size.x || 
             prev_pos.y < 0 || prev_pos.y >= size.y || 
             prev_pos.z < 0 || prev_pos.z >= size.z) {
             
-            // Background Equilibrium for blending
             float rho_bg = 1.0;
             float u2_bg = dot(u_wind, u_wind);
             float cu_bg = dot(vec3(c[i]), u_wind);
             float feq_bg = w[i] * rho_bg * (1.0 + 3.0 * cu_bg + 4.5 * cu_bg * cu_bg - 1.5 * u2_bg);
 
-            // Front Boundary (Inflow): Inject constant equilibrium matching background wind
             if (pos.x == 0) {
                 f_in[i * stride + idx] = feq_bg;
             } 
-            // All other boundaries (Outflow/Sides): Characterestic-based blend
-            // We blend the extrapolated value with the background equilibrium to 
-            // gradually damp out oscillations and prevent reflection.
             else {
                 ivec3 internal_neighbor = clamp(pos - c[i] + c[opposite[i]], ivec3(0), size - 1);
                 int neighbor_idx = (internal_neighbor.z * size.y * size.x + internal_neighbor.y * size.x + internal_neighbor.x);
                 float f_extrapolated = f_out[i * stride + neighbor_idx];
-                
-                // Blend factor: 10% toward background equilibrium at boundaries
-                f_in[i * stride + idx] = mix(f_extrapolated, feq_bg, 0.1);
+                f_in[i * stride + idx] = mix(f_extrapolated, feq_bg, 0.05);
             }
         } 
-        // Solid Bounce-back (Half-way)
         else if (imageLoad(solid_img, prev_pos).r != 0) {
             f_in[i * stride + idx] = f_out[opposite[i] * stride + idx];
         } 
-        // Normal streaming from internal neighbor
         else {
             int prev_idx = (prev_pos.z * size.y * size.x + prev_pos.y * size.x + prev_pos.x);
             f_in[i * stride + idx] = f_out[i * stride + prev_idx];
         }
     }
 
-    // SPONGE LAYER (Absorbing Boundary)
-    // Gradually relax toward background equilibrium in the boundary regions
+    // REDUCED SPONGE LAYER for test scenarios
     float sponge = 0.0;
-    
-    // Outflow sponge (X direction)
-    if (pos.x > size.x - 12) {
-        sponge = max(sponge, float(pos.x - (size.x - 12)) / 12.0);
+    if (pos.x > size.x - 8) {
+        sponge = max(sponge, float(pos.x - (size.x - 8)) / 8.0);
     }
-    // Side sponges (Y and Z directions)
-    if (pos.y < 8) sponge = max(sponge, float(8 - pos.y) / 8.0);
-    if (pos.y > size.y - 8) sponge = max(sponge, float(pos.y - (size.y - 8)) / 8.0);
-    if (pos.z < 8) sponge = max(sponge, float(8 - pos.z) / 8.0);
-    if (pos.z > size.z - 8) sponge = max(sponge, float(pos.z - (size.z - 8)) / 8.0);
+    // Reduced side sponges to 4 cells
+    if (pos.y < 4) sponge = max(sponge, float(4 - pos.y) / 4.0);
+    if (pos.y > size.y - 4) sponge = max(sponge, float(pos.y - (size.y - 4)) / 4.0);
+    if (pos.z < 4) sponge = max(sponge, float(4 - pos.z) / 4.0);
+    if (pos.z > size.z - 4) sponge = max(sponge, float(pos.z - (size.z - 4)) / 4.0);
 
     if (sponge > 0.0) {
         float rho_s = 0.0;
@@ -100,14 +87,13 @@ void main() {
         }
         u_s /= max(rho_s, 0.0001);
         
-        // Relax velocity toward background wind, keep local density
-        vec3 u_target = mix(u_s, u_wind, sponge * 0.5);
+        vec3 u_target = mix(u_s, u_wind, sponge * 0.3);
         float u2_t = dot(u_target, u_target);
         
         for(int i=0; i<19; i++) {
             float cu_t = dot(vec3(c[i]), u_target);
             float feq_t = w[i] * rho_s * (1.0 + 3.0 * cu_t + 4.5 * cu_t * cu_t - 1.5 * u2_t);
-            f_in[i * stride + idx] = mix(f_in[i * stride + idx], feq_t, sponge * 0.2);
+            f_in[i * stride + idx] = mix(f_in[i * stride + idx], feq_t, sponge * 0.1);
         }
     }
 }

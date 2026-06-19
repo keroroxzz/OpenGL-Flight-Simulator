@@ -55,6 +55,10 @@ target_link_libraries(aircraft_test ${OPENGL_LIBRARIES} ${GLUT_LIBRARIES} ${GLEW
 add_executable(particle_test src/ParticleTest.cpp src/Shader.cpp src/math3D.cpp src/gltools.cpp ${HEADER_FILES})
 target_link_libraries(particle_test ${OPENGL_LIBRARIES} ${GLUT_LIBRARIES} ${GLEW_LIBRARIES} GLU pthread)
 
+# Headless Full-Flight Stability Test (real F22 aerodynamics + rigid-body dynamics)
+add_executable(flight_stability_test src/FlightStabilityTest.cpp src/Plane.cpp ${COMMON_SOURCES} ${HEADER_FILES})
+target_link_libraries(flight_stability_test ${OPENGL_LIBRARIES} ${GLUT_LIBRARIES} ${GLEW_LIBRARIES} GLU pthread)
+
 set_target_properties(${PROJECT_NAME} PROPERTIES 
 	ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/flight_sim/lib"
 	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/flight_sim/lib"
@@ -70,7 +74,12 @@ set_target_properties(aircraft_test PROPERTIES
 	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/flight_sim/lib"
 	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/flight_sim/")
 
-set_target_properties(particle_test PROPERTIES 
+set_target_properties(particle_test PROPERTIES
+	ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/flight_sim/lib"
+	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/flight_sim/lib"
+	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/flight_sim/")
+
+set_target_properties(flight_stability_test PROPERTIES
 	ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/flight_sim/lib"
 	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/flight_sim/lib"
 	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/flight_sim/")

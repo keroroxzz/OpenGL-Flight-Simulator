@@ -10,6 +10,11 @@ layout(std430, binding = 4) buffer force_buf {
     int total_force_int[8];
 };
 
+// Center of rotation (aircraft CoM) in lattice-cell coordinates. Torque must be taken about
+// this point - the same point the rigid-body integrator rotates about - not the grid center,
+// otherwise a net force at an offset from the CoM injects a spurious r x F torque.
+uniform vec3 com;
+
 const ivec3 c[19] = ivec3[](
     ivec3(0,0,0),
     ivec3(1,0,0), ivec3(-1,0,0), ivec3(0,1,0), ivec3(0,-1,0), ivec3(0,0,1), ivec3(0,0,-1),
@@ -43,8 +48,8 @@ void main() {
                     vec3 localForce = vec3(c[i]) * (2.0 * fi);
                     force += localForce;
 
-                    // Torque = r x f. Relative position in lattice units from grid center.
-                    vec3 r = vec3(pos) - vec3(size) * 0.5;
+                    // Torque = r x f. Lever arm in lattice units, measured from the CoM.
+                    vec3 r = vec3(pos) - com;
                     torque += cross(r, localForce);
                 }
             }

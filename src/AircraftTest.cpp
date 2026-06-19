@@ -176,8 +176,10 @@ void RunHeadless() {
 
         if (i % 100 == 0) {
             M3DVector3f* force = solver->getCFDForce();
-            std::cout << "Step " << i << "/" << headlessSteps 
-                      << " | Force: [" << (*force)[0] << ", " << (*force)[1] << ", " << (*force)[2] << "]" << std::endl;
+            M3DVector3f* torque = solver->getCFDTorque();
+            std::cout << "Step " << i << "/" << headlessSteps
+                      << " | Force: [" << (*force)[0] << ", " << (*force)[1] << ", " << (*force)[2] << "]"
+                      << " | Torque: [" << (*torque)[0] << ", " << (*torque)[1] << ", " << (*torque)[2] << "]" << std::endl;
         }
     }
 

@@ -78,7 +78,10 @@ F22::F22()
 
     flowField = new FlowField(1000);
     fluidSolver = new FluidSolver(32, 24, 24);
-    gpuFluidSolver = new GPUFluidSolver(96, 96, 96);
+    // NX/NY/NZ must give a uniform cell size across all axes for the 32x16x16m grid box
+    // (128/32 == 64/16 == 4 cells/m, dx = 0.25m), matching lbm_test/aircraft_test and the
+    // dx=0.25 assumed by velocity_reconstruct's v_scale and reinitEquilibrium's u_scale.
+    gpuFluidSolver = new GPUFluidSolver(128, 64, 64);
     m3dCopyVector3(gridOrigin, plane->wpos);
 
 	plane->updatePositionVelocity(plane);
@@ -112,9 +115,9 @@ void F22::drawBoundingBox(M3DMatrix44f cvmatrix)
     
     glPushMatrix();
     glLoadMatrixf(cvmatrix);
-    // Grid bounds are relative to gridOrigin (which is plane->wpos at the start of updatePhysic)
-    glTranslatef(gridOrigin[0], gridOrigin[1], gridOrigin[2]);
-    
+    // bMin/bMax are already absolute world-space (GPUFluidSolver::setGridBounds stores
+    // the world bbox directly) - do not translate by gridOrigin again here.
+
     glDisable(GL_LIGHTING);
     glLineWidth(2.0f);
     glColor3f(1.0f, 1.0f, 0.0f); // Yellow
@@ -187,7 +190,7 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
     m3dSubtractVectors3(relWindPhys, windVelocity, plane->wvel);
 
     M3DVector3f localWindLattice = { 0.0f, 0.0f, 0.0f };
-    float dx_lbm = 32.0f / 96.0f; // matches grid size
+    float dx_lbm = 32.0f / 128.0f; // matches grid size (dx = 0.25m)
     float u_scale = dt / dx_lbm;
     localWindLattice[0] = relWindPhys[0] * u_scale;
     localWindLattice[1] = relWindPhys[1] * u_scale;
@@ -214,24 +217,15 @@ void F22::updatePhysic(bool windTunnel, M3DVector3f wind)
         }
 
         // 3. Voxelize using CURRENT updated waxis (including control surface angles)
-        M3DMatrix44f relTransform;
-        auto voxelizeRel = [&](ObjModel* model, M3DMatrix44f waxis) {
-            m3dCopyMatrix44(relTransform, waxis);
-            relTransform[12] -= plane->wpos[0];
-            relTransform[13] -= plane->wpos[1];
-            relTransform[14] -= plane->wpos[2];
-            gpuFluidSolver->voxelizePart(model, relTransform);
-        };
-
-        voxelizeRel(body_o, plane->waxis);
-        voxelizeRel(aileronL_o, aileronL->waxis);
-        voxelizeRel(aileronR_o, aileronR->waxis);
-        voxelizeRel(flapL_o, flapL->waxis);
-        voxelizeRel(flapR_o, flapR->waxis);
-        voxelizeRel(rudder_o, rudderL->waxis);
-        voxelizeRel(rudder_o, rudderR->waxis);
-        voxelizeRel(elevatorL_o, elevatorL->waxis);
-        voxelizeRel(elevatorR_o, elevatorR->waxis);
+        gpuFluidSolver->voxelizePart(body_o, plane->waxis);
+        gpuFluidSolver->voxelizePart(aileronL_o, aileronL->waxis);
+        gpuFluidSolver->voxelizePart(aileronR_o, aileronR->waxis);
+        gpuFluidSolver->voxelizePart(flapL_o, flapL->waxis);
+        gpuFluidSolver->voxelizePart(flapR_o, flapR->waxis);
+        gpuFluidSolver->voxelizePart(rudder_o, rudderL->waxis);
+        gpuFluidSolver->voxelizePart(rudder_o, rudderR->waxis);
+        gpuFluidSolver->voxelizePart(elevatorL_o, elevatorL->waxis);
+        gpuFluidSolver->voxelizePart(elevatorR_o, elevatorR->waxis);
 
         // 4. Step the fluid simulation
         gpuFluidSolver->step(dt, plane->wvel, plane->waxis, plane->wpos, sim_time);
@@ -270,6 +264,7 @@ void F22::thrustControl(float v)
 }
 
 void F22::setPosition(M3DVector3f pos) { plane->setPostion(pos[0], pos[1], pos[2]); }
+void F22::setVelocity(M3DVector3f v) { m3dCopyVector3(plane->velocity, v); m3dCopyVector3(plane->wvel, v); }
 void F22::setDisplacement(M3DVector3f d) { M3DVector3f pos; getPosition(pos); m3dAddVectors3(pos, pos, d); setPosition(pos); }
 
 void F22::updateLBMTest(M3DVector3f wind)
@@ -312,5 +307,6 @@ void F22::updateLBMTest(M3DVector3f wind)
 
 void F22::getPosition(M3DVector3f pos) { m3dCopyVector3(pos, plane->position); }
 void F22::getVelocity(M3DVector3f v) { m3dCopyVector3(v, plane->velocity); }
+void F22::getAngularVelocity(M3DVector3f w) { m3dCopyVector3(w, plane->angular_velocity); }
 void F22::getX(M3DVector3f x) { m3dCopyVector3(x, &plane->axis[0]); }
 void F22::getZ(M3DVector3f z) { m3dCopyVector3(z, &plane->axis[8]); }

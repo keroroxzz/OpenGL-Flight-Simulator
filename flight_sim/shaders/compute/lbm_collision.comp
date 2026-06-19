@@ -26,7 +26,7 @@ const float w[19] = float[](
     1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0
 );
 
-const float MAX_VELOCITY = 0.2; // ~ Mach 0.35
+const float MAX_VELOCITY = 0.25; 
 const float MIN_DENSITY = 0.5;
 const float MAX_DENSITY = 2.0;
 
@@ -43,7 +43,7 @@ void main() {
 
     float f[19];
     float rho = 0.0;
-    vec3 j = vec3(0.0); // Momentum
+    vec3 j = vec3(0.0); 
 
     for(int i=0; i<19; i++) {
         f[i] = f_in[i * stride + idx];
@@ -51,14 +51,11 @@ void main() {
         j += f[i] * c[i];
     }
 
-    // Standard density/velocity calculation
     vec3 u = j / max(rho, 0.0001);
     
-    // Density Normalization: Force density back toward 1.0 to prevent runaway oscillations
-    // This is a common technique for stabilizing LBM at high Reynolds numbers.
-    rho = mix(rho, 1.0, 0.05);
+    // REDUCED Damping: mix toward 1.0 much more slowly (0.5% instead of 5%)
+    rho = mix(rho, 1.0, 0.005);
 
-    // Safety clamp for extreme cases (Mach Limit)
     float speed = length(u);
     if (speed > MAX_VELOCITY) {
         u = (u / speed) * MAX_VELOCITY;
@@ -71,12 +68,11 @@ void main() {
         feq[i] = w[i] * rho * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
     }
 
-    // Dynamic Viscosity (LES Smagorinsky Model)
-    float tau_base = max(tau, 0.8); // Higher base tau for stability
+    // LOWER Tau floor for physical bencharks (0.53 is safe but low viscosity)
+    float tau_base = max(tau, 0.53); 
     float tau_eff = tau_base;
     
-    // LES Constant: 0.1 to 0.2 is typical. Using 0.15 for balance.
-    float Cs = 0.15; 
+    float Cs = 0.12; // Slightly reduced Smagorinsky
     
     mat3 Q = mat3(0.0);
     for (int i = 0; i < 19; i++) {
@@ -94,11 +90,10 @@ void main() {
     for(int i=0; i<3; i++) for(int j=0; j<3; j++) Pi_mag += Q[i][j] * Q[i][j];
     Pi_mag = sqrt(Pi_mag);
     
-    // Effective relaxation time with turbulence
     tau_eff = 0.5 * (tau_base + sqrt(tau_base * tau_base + 18.0 * Cs * Cs * Pi_mag / max(rho, 0.0001)));
     
     // Clamp tau to stable range
-    tau_eff = clamp(tau_eff, 0.8, 2.5);
+    tau_eff = clamp(tau_eff, 0.52, 2.5);
 
     for (int i = 0; i < 19; i++) {
         f_out[i * stride + idx] = f[i] - (f[i] - feq[i]) / tau_eff;

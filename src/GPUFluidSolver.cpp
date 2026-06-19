@@ -11,7 +11,11 @@ GPUFluidSolver::GPUFluidSolver(int nx, int ny, int nz) : NX(nx), NY(ny), NZ(nz) 
     // REFACTOR: Grid must exactly match lattice size * dx (128*0.25 = 32, 64*0.25 = 16)
     gridMin[0] = -16.0f; gridMin[1] = -8.0f; gridMin[2] = -8.0f;
     gridMax[0] = 16.0f; gridMax[1] = 8.0f; gridMax[2] = 8.0f;
+    m3dCopyVector3(quantizedGridMin, gridMin);
+    m3dCopyVector3(quantizedGridMax, gridMax);
     m3dCopyVector3(prevGridMin, gridMin);
+    m3dCopyVector3(initialGridMin, gridMin);
+    gridOffsetX = gridOffsetY = gridOffsetZ = 0;
     
     initBuffers();
     initShaders();
@@ -108,12 +112,32 @@ void GPUFluidSolver::reinitEquilibrium(M3DVector3f physVel) {
 
 void GPUFluidSolver::setGridBounds(M3DVector3f min, M3DVector3f max, M3DVector3f localWind) {
     M3DVector3f dx = { (max[0]-min[0])/NX, (max[1]-min[1])/NY, (max[2]-min[2])/NZ };
-    int ox = (int)round((min[0]-prevGridMin[0])/dx[0]), oy = (int)round((min[1]-prevGridMin[1])/dx[1]), oz = (int)round((min[2]-prevGridMin[2])/dx[2]);
+    
+    long long targetOx = (long long)round((min[0] - initialGridMin[0]) / dx[0]);
+    long long targetOy = (long long)round((min[1] - initialGridMin[1]) / dx[1]);
+    long long targetOz = (long long)round((min[2] - initialGridMin[2]) / dx[2]);
+    
+    int ox = (int)(targetOx - gridOffsetX);
+    int oy = (int)(targetOy - gridOffsetY);
+    int oz = (int)(targetOz - gridOffsetZ);
+
     if (ox != 0 || oy != 0 || oz != 0) { 
         dispatchShift(ox, oy, oz, localWind); 
-        prevGridMin[0] += (float)ox*dx[0]; prevGridMin[1] += (float)oy*dx[1]; prevGridMin[2] += (float)oz*dx[2]; 
+        gridOffsetX = targetOx;
+        gridOffsetY = targetOy;
+        gridOffsetZ = targetOz;
     }
+    
     m3dCopyVector3(gridMin, min); m3dCopyVector3(gridMax, max);
+    
+    // Absolute precision calculation completely eliminates float drift
+    quantizedGridMin[0] = initialGridMin[0] + gridOffsetX * dx[0];
+    quantizedGridMin[1] = initialGridMin[1] + gridOffsetY * dx[1];
+    quantizedGridMin[2] = initialGridMin[2] + gridOffsetZ * dx[2];
+    
+    quantizedGridMax[0] = quantizedGridMin[0] + (max[0] - min[0]);
+    quantizedGridMax[1] = quantizedGridMin[1] + (max[1] - min[1]);
+    quantizedGridMax[2] = quantizedGridMin[2] + (max[2] - min[2]);
 }
 
 void GPUFluidSolver::dispatchShift(int ox, int oy, int oz, M3DVector3f localWind) {
@@ -128,8 +152,9 @@ void GPUFluidSolver::dispatchShift(int ox, int oy, int oz, M3DVector3f localWind
 
 void GPUFluidSolver::step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxis, M3DVector3f planePos, float simTime) {
     lastDt = dt;
-    // dx for u_scale should be consistent with the 32m / 96 cells ratio
-    float dx_scale = 32.0f / 96.0f;
+    // dx must match the uniform cell size implied by the current grid box and NX
+    // (callers keep cubic cells, e.g. 32m/128 cells = 0.25m, so any axis works here).
+    float dx_scale = (gridMax[0] - gridMin[0]) / NX;
     float u_scale = dt / dx_scale;
     extern M3DVector3f windVelocity; M3DVector3f relWindPhys; m3dSubtractVectors3(relWindPhys, windVelocity, planeVel);
     M3DVector3f localWindLattice = { relWindPhys[0]*u_scale, relWindPhys[1]*u_scale, relWindPhys[2]*u_scale };
@@ -175,7 +200,7 @@ void GPUFluidSolver::step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxi
     dispatchParticleAdvect(dt, planeVel, planePos, planeWaxis, simTime); 
     glMemoryBarrier(GL_ALL_BARRIER_BITS);
     
-    dispatchForceCompute(); 
+    dispatchForceCompute(planePos);
     dispatchWakeExtract(dt, planeWaxis, planePos);
 
     if (stabilityShader) {
@@ -211,8 +236,8 @@ void GPUFluidSolver::drawSolidGrid(M3DMatrix44f mvp) {
     GLint samplerLoc = glGetUniformLocation(solidDebugShader->getProgram(), "solidTexture");
     glUniform1i(samplerLoc, 0);
 
-    solidDebugShader->setUniform("gridMin", UNI_VEC_3, gridMin);
-    solidDebugShader->setUniform("gridMax", UNI_VEC_3, gridMax);
+    solidDebugShader->setUniform("gridMin", UNI_VEC_3, quantizedGridMin);
+    solidDebugShader->setUniform("gridMax", UNI_VEC_3, quantizedGridMax);
     solidDebugShader->setUniform("modelViewProj", UNI_MATRIX_4, mvp);
     int dims[3] = { NX, NY, NZ };
     solidDebugShader->setUniform("gridSize", UNI_INT_3, dims);
@@ -227,9 +252,10 @@ void GPUFluidSolver::resetParticles() {
     struct Particle { float pos_life[4]; float vel_vort[4]; };
     std::vector<Particle> initial_particles(numParticles);
     for (int i = 0; i < numParticles; i++) {
-        initial_particles[i].pos_life[0] = gridMin[0] + (float(rand())/RAND_MAX)*(gridMax[0]-gridMin[0]);
-        initial_particles[i].pos_life[1] = gridMin[1] + (float(rand())/RAND_MAX)*(gridMax[1]-gridMin[1]);
-        initial_particles[i].pos_life[2] = gridMin[2] + (float(rand())/RAND_MAX)*(gridMax[2]-gridMin[2]);
+        // World space
+        initial_particles[i].pos_life[0] = quantizedGridMin[0] + (float(rand())/RAND_MAX)*(quantizedGridMax[0]-quantizedGridMin[0]);
+        initial_particles[i].pos_life[1] = quantizedGridMin[1] + (float(rand())/RAND_MAX)*(quantizedGridMax[1]-quantizedGridMin[1]);
+        initial_particles[i].pos_life[2] = quantizedGridMin[2] + (float(rand())/RAND_MAX)*(quantizedGridMax[2]-quantizedGridMin[2]);
         initial_particles[i].pos_life[3] = 0.5f + (float(rand())/RAND_MAX)*0.5f; 
         for(int j=0; j<4; j++) initial_particles[i].vel_vort[j] = 0.0f;
     }
@@ -272,32 +298,67 @@ void GPUFluidSolver::dispatchParticleAdvect(float dt, M3DVector3f planeVel, M3DV
     GLint samplerLoc = glGetUniformLocation(particleAdvectShader->getProgram(), "velocity_tex"); glUniform1i(samplerLoc, 0);
     glBindImageTexture(2, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
     particleAdvectShader->setUniform("dt", UNI_FLOAT_1, &dt); 
-    particleAdvectShader->setUniform("gridMin", UNI_VEC_3, gridMin); 
-    particleAdvectShader->setUniform("gridMax", UNI_VEC_3, gridMax);
+    particleAdvectShader->setUniform("gridMin", UNI_VEC_3, quantizedGridMin); 
+    particleAdvectShader->setUniform("gridMax", UNI_VEC_3, quantizedGridMax);
     particleAdvectShader->setUniform("gridVel", UNI_VEC_3, planeVel);
     
-    M3DVector3f spawnPos; m3dCopyVector3(spawnPos, planePos_arg); spawnPos[0] += -18.0f; 
+    // Seed the upstream "smoke streak" just inside the current grid's inflow (min-x) face,
+    // centered on y/z. Derived from the grid bounds (which already follow the plane) rather
+    // than planePos_arg + a hardcoded offset, so it stays inside the grid for any grid size
+    // (the old planePos-18m offset assumed the main sim's box and fell outside lbm_test's).
+    M3DVector3f spawnPos;
+    spawnPos[0] = quantizedGridMin[0] + 2.0f;
+    spawnPos[1] = (quantizedGridMin[1] + quantizedGridMax[1]) * 0.5f;
+    spawnPos[2] = (quantizedGridMin[2] + quantizedGridMax[2]) * 0.5f;
     particleAdvectShader->setUniform("spawnPos", UNI_VEC_3, spawnPos);
-    M3DVector3f spawnRange = {0.5f, 16.0f, 16.0f}; particleAdvectShader->setUniform("spawnRange", UNI_VEC_3, spawnRange);
+    M3DVector3f spawnRange = {
+        0.5f,
+        quantizedGridMax[1] - quantizedGridMin[1],
+        quantizedGridMax[2] - quantizedGridMin[2]
+    };
+    particleAdvectShader->setUniform("spawnRange", UNI_VEC_3, spawnRange);
     particleAdvectShader->setUniform("iTime", UNI_FLOAT_1, &simTime);
     glDispatchCompute(numParticles / 256 + 1, 1, 1); 
 }
 
-void GPUFluidSolver::dispatchForceCompute() {
-    if (!forceComputeShader) return; 
+void GPUFluidSolver::dispatchForceCompute(M3DVector3f comPos) {
+    if (!forceComputeShader) return;
     forceComputeShader->use();
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, f_in_SSBO); glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, f_out_SSBO);
     glBindImageTexture(3, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, forceSSBO);
+
+    // Center of rotation in lattice-cell coordinates: torque is taken about the aircraft CoM
+    // (== planePos, the point the rigid body rotates about), not the grid center.
+    float dx_com = (gridMax[0] - gridMin[0]) / NX;
+    M3DVector3f com = {
+        (comPos[0] - quantizedGridMin[0]) / dx_com,
+        (comPos[1] - quantizedGridMin[1]) / dx_com,
+        (comPos[2] - quantizedGridMin[2]) / dx_com
+    };
+    forceComputeShader->setUniform("com", UNI_VEC_3, com);
+
     int zero[8] = {0,0,0,0,0,0,0,0}; glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 32, zero);
     glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
     int forceData[8]; glBindBuffer(GL_SHADER_STORAGE_BUFFER, forceSSBO); glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 32, forceData);
-    float scale_val = 1e-6f, alpha = 0.08f;
-    cfdForce[0] = forceData[0]*scale_val; cfdForce[1] = forceData[1]*scale_val; cfdForce[2] = forceData[2]*scale_val;
+
+    // lbm_force.comp accumulates momentum-exchange in lattice units (rho~1, c_i are unit
+    // lattice vectors) encoded as integers scaled by 1e6 for atomicAdd. Converting that sum
+    // back to Newtons needs the standard LBM force conversion rho_phys * dx^4 / dt^2 on top of
+    // undoing the integer encoding - velocity gets the analogous dx/dt treatment in
+    // velocity_reconstruct.comp's v_scale, force previously got none. Torque carries an extra
+    // dx because lbm_force.comp's lever arm r is in lattice-cell units, not meters.
+    const float rho_air = 1.225f; // kg/m^3
+    float dx = (gridMax[0] - gridMin[0]) / NX;
+    float dt2 = lastDt * lastDt;
+    float forceConv = 1e-6f * rho_air * (dx*dx*dx*dx) / dt2;
+    float torqueConv = forceConv * dx;
+    float alpha = 0.08f;
+    cfdForce[0] = forceData[0]*forceConv; cfdForce[1] = forceData[1]*forceConv; cfdForce[2] = forceData[2]*forceConv;
     filteredForce[0] = filteredForce[0]*(1.0f-alpha) + cfdForce[0]*alpha; filteredForce[1] = filteredForce[1]*(1.0f-alpha) + cfdForce[1]*alpha; filteredForce[2] = filteredForce[2]*(1.0f-alpha) + cfdForce[2]*alpha;
 
     M3DVector3f cfdTorque;
-    cfdTorque[0] = forceData[4]*scale_val; cfdTorque[1] = forceData[5]*scale_val; cfdTorque[2] = forceData[6]*scale_val;
+    cfdTorque[0] = forceData[4]*torqueConv; cfdTorque[1] = forceData[5]*torqueConv; cfdTorque[2] = forceData[6]*torqueConv;
     filteredTorque[0] = filteredTorque[0]*(1.0f-alpha) + cfdTorque[0]*alpha; filteredTorque[1] = filteredTorque[1]*(1.0f-alpha) + cfdTorque[1]*alpha; filteredTorque[2] = filteredTorque[2]*(1.0f-alpha) + cfdTorque[2]*alpha;
 }
 
@@ -308,8 +369,8 @@ void GPUFluidSolver::dispatchWakeExtract(float dt, M3DMatrix44f planeWaxis, M3DV
     glBindImageTexture(2, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, wakeCandidateSSBO); glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, wakeCounterBuffer);
     uint32_t zero_cnt = 0; glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 4, &zero_cnt);
-    wakeExtractShader->setUniform("gridMin", UNI_VEC_3, gridMin); 
-    wakeExtractShader->setUniform("gridMax", UNI_VEC_3, gridMax);
+    wakeExtractShader->setUniform("gridMin", UNI_VEC_3, quantizedGridMin); 
+    wakeExtractShader->setUniform("gridMax", UNI_VEC_3, quantizedGridMax);
     glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
     uint32_t count; glBindBuffer(GL_SHADER_STORAGE_BUFFER, wakeCounterBuffer); glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 4, &count);
     if (count > 1024) count = 1024;
@@ -334,11 +395,11 @@ void GPUFluidSolver::dispatchWakeInject(M3DVector3f planePos) {
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, wakeSSBO); 
     glBindImageTexture(3, solidTexture, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R8UI);
     unsigned int count = (unsigned int)gpuVortices.size(); wakeInjectShader->setUniform("numVortices", UNI_INT_1, &count);
-    float dx = 0.25f;
-    float u_scale = lastDt / dx; 
+    float dx_val = 0.25f;
+    float u_scale = lastDt / dx_val; 
     wakeInjectShader->setUniform("u_scale", UNI_FLOAT_1, &u_scale);
-    M3DVector3f worldGridMin, worldGridMax; m3dAddVectors3(worldGridMin, planePos, gridMin); m3dAddVectors3(worldGridMax, planePos, gridMax);
-    wakeInjectShader->setUniform("gridMin", UNI_VEC_3, worldGridMin); wakeInjectShader->setUniform("gridMax", UNI_VEC_3, worldGridMax);
+    wakeInjectShader->setUniform("gridMin", UNI_VEC_3, quantizedGridMin); 
+    wakeInjectShader->setUniform("gridMax", UNI_VEC_3, quantizedGridMax);
     glDispatchCompute(NX/8, NY/8, NZ/8); glMemoryBarrier(GL_ALL_BARRIER_BITS);
 }
 
@@ -352,6 +413,9 @@ void GPUFluidSolver::drawParticles(M3DMatrix44f mvp) {
     GLint mvpLoc = glGetUniformLocation(prog, "modelViewProj");
     glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, mvp);
     
+    particleRenderShader->setUniform("gridMin", UNI_VEC_3, quantizedGridMin);
+    particleRenderShader->setUniform("gridMax", UNI_VEC_3, quantizedGridMax);
+
     GLint dtLoc = glGetUniformLocation(prog, "u_dt");
     glUniform1f(dtLoc, lastDt);
 
@@ -377,7 +441,7 @@ void GPUFluidSolver::voxelizePart(ObjModel* model, M3DMatrix44f worldTransform) 
     if (triSSBO == 0) return;
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, triSSBO);
     voxelizeShader->use(); glBindImageTexture(3, solidTexture, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R8UI);
-    voxelizeShader->setUniform("gridMin", UNI_VEC_3, gridMin); voxelizeShader->setUniform("gridMax", UNI_VEC_3, gridMax);
+    voxelizeShader->setUniform("gridMin", UNI_VEC_3, quantizedGridMin); voxelizeShader->setUniform("gridMax", UNI_VEC_3, quantizedGridMax);
     unsigned int nTri = (unsigned int)(model->getNumIndices() / 3); 
     voxelizeShader->setUniform("numTriangles", UNI_INT_1, &nTri);
     voxelizeShader->setUniform("modelMatrix", UNI_MATRIX_4, &worldTransform[0]);
@@ -389,7 +453,7 @@ void GPUFluidSolver::voxelizeAircraft(F22* aircraft, M3DVector3f gridOrigin) {}
 void GPUFluidSolver::voxelizeCylinder(M3DVector3f center, float radius, float height, int axis) {
     if (!voxelizeCylinderShader) return;
     voxelizeCylinderShader->use(); glBindImageTexture(1, solidTexture, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R8UI);
-    voxelizeCylinderShader->setUniform("gridMin", UNI_VEC_3, gridMin); voxelizeCylinderShader->setUniform("gridMax", UNI_VEC_3, gridMax);
+    voxelizeCylinderShader->setUniform("gridMin", UNI_VEC_3, quantizedGridMin); voxelizeCylinderShader->setUniform("gridMax", UNI_VEC_3, quantizedGridMax);
     voxelizeCylinderShader->setUniform("center", UNI_VEC_3, center);
     voxelizeCylinderShader->setUniform("radius", UNI_FLOAT_1, &radius); voxelizeCylinderShader->setUniform("height", UNI_FLOAT_1, &height);
     voxelizeCylinderShader->setUniform("axis", UNI_INT_1, &axis);
@@ -399,7 +463,7 @@ void GPUFluidSolver::voxelizeCylinder(M3DVector3f center, float radius, float he
 void GPUFluidSolver::voxelizeGround(float groundZ, M3DVector3f gridOrigin_) {
     if (!voxelizeGroundShader) return;
     voxelizeGroundShader->use(); glBindImageTexture(1, solidTexture, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R8UI);
-    voxelizeGroundShader->setUniform("gridMin", UNI_VEC_3, gridMin); voxelizeGroundShader->setUniform("gridMax", UNI_VEC_3, gridMax);
+    voxelizeGroundShader->setUniform("gridMin", UNI_VEC_3, quantizedGridMin); voxelizeGroundShader->setUniform("gridMax", UNI_VEC_3, quantizedGridMax);
     voxelizeGroundShader->setUniform("gridOrigin", UNI_VEC_3, gridOrigin_);
     voxelizeGroundShader->setUniform("groundZ", UNI_FLOAT_1, &groundZ);
     glDispatchCompute(NX / 8, NY / 8, NZ / 8); glMemoryBarrier(GL_ALL_BARRIER_BITS);

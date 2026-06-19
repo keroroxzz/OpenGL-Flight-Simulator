@@ -38,6 +38,10 @@ TestConfig currentTest = {
     {10.0f, 0.0f, 0.0f}, 0.0f
 };
 
+// Cylinder sits upstream of grid center so the wake has room (~8.7D vs ~5.3D at center)
+// to develop several full shedding wavelengths before the outflow sponge layer absorbs it.
+const float KARMAN_CYLINDER_X = -8.0f;
+
 M3DMatrix44f projection, model_view;
 M3DVector3f cameraPos;
 M3DVector3f cameraFocus = { 0, 0, 0 };
@@ -71,21 +75,29 @@ void RunSimulationStep() {
     solver->clearSolid();
     
     if (currentTest.mode == KARMAN_VORTEX) {
-        M3DVector3f center = { 0.0f, 0.0f, 0.0f };
+        M3DVector3f center = { KARMAN_CYLINDER_X, 0.0f, 0.0f };
         solver->voxelizeCylinder(center, 1.2f, 16.0f, 2);
     } else if (currentTest.mode == STEP_FLOW) {
         M3DVector3f stepOrigin = { currentTest.gridMin[0], currentTest.gridMin[1], currentTest.gridMin[2] };
         solver->voxelizeGround(currentTest.gridMin[2] + 4.0f, stepOrigin); 
     }
 
-    M3DVector3f dummyPlaneVel = { 0.0f, 0.0f, 0.0f };
     M3DMatrix44f identity;
     m3dLoadIdentity44(identity);
-    
-    M3DVector3f perturbation = {0,0,0};
+    M3DVector3f origin = { 0.0f, 0.0f, 0.0f };
+
+    // Break symmetry by jittering the apparent inflow wind (step() computes the inflow as
+    // windVelocity - planeVel, so feeding -perturbation here adds it to the relative wind).
+    // Previously this jitter was passed into step()'s unused planePos argument instead, so it
+    // never actually reached the flow - shedding relied on numerical noise alone.
+    // Decay the nudge away after ~1s so it only seeds the initial instability instead of
+    // continuously forcing the wake at the nudge's own frequency (which otherwise locks the
+    // shedding to that forcing frequency instead of the cylinder's natural one).
+    M3DVector3f perturbedVel = { 0.0f, 0.0f, 0.0f };
     if (currentTest.mode == KARMAN_VORTEX) {
-        perturbation[1] = 0.5f * sin(sim_time * 10.0f);
-        perturbation[2] = 0.3f * cos(sim_time * 7.0f);
+        float amp = 0.5f * exp(-sim_time / 0.4f);
+        perturbedVel[1] = -amp * sin(sim_time * 10.0f);
+        perturbedVel[2] = -amp * 0.6f * cos(sim_time * 7.0f);
     }
 
     if (currentTest.mode == LID_DRIVEN_CAVITY) {
@@ -94,7 +106,7 @@ void RunSimulationStep() {
     }
 
     for (int i = 0; i < 5; i++) {
-        solver->step(0.001f, dummyPlaneVel, identity, perturbation, sim_time);
+        solver->step(0.001f, perturbedVel, identity, origin, sim_time);
         sim_time += 0.001f;
     }
 }
@@ -123,7 +135,7 @@ void RenderScene() {
         glPushMatrix();
         glColor3f(0.4f, 0.4f, 0.4f);
         GLUquadricObj *quad = gluNewQuadric();
-        glTranslatef(0, 0, -8);
+        glTranslatef(KARMAN_CYLINDER_X, 0, -8);
         gluCylinder(quad, 1.2, 1.2, 16.0, 32, 1);
         gluDeleteQuadric(quad);
         glPopMatrix();

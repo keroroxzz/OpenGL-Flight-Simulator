@@ -42,10 +42,12 @@ public:
 	void thrustControl(float v);
 
 	void setPosition(M3DVector3f pos);
+	void setVelocity(M3DVector3f v);
 	void setDisplacement(M3DVector3f displacement);
 
 	void getPosition(M3DVector3f pos);
 	void getVelocity(M3DVector3f v);
+	void getAngularVelocity(M3DVector3f w);
 	void getX(M3DVector3f x);
 	void getZ(M3DVector3f z);
 	float getThrottle() {return throttle;}

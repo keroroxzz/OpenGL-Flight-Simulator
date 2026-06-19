@@ -1,7 +1,7 @@
 #version 430 core
 
 struct Particle {
-    vec4 pos_life; // xyz = pos, w = normalized life
+    vec4 pos_life; // xyz = WORLD pos, w = normalized life
     vec4 vel_vort; // xyz = vel, w = vorticity magnitude
 };
 
@@ -10,7 +10,9 @@ layout(std430, binding = 0) buffer particle_buf {
 };
 
 uniform mat4 modelViewProj;
-uniform float u_dt; // Line length proportional to dt
+uniform vec3 gridMin;
+uniform vec3 gridMax;
+uniform float u_dt; 
 
 out vec4 vColor;
 
@@ -28,15 +30,16 @@ void main() {
         return;
     }
 
+    vec3 worldPos = p.pos_life.xyz;
+
     if (vort < -50.0) {
-        gl_Position = modelViewProj * vec4(p.pos_life.xyz, 1.0);
+        gl_Position = modelViewProj * vec4(worldPos, 1.0);
         vColor = vec4(1.0, 0.0, 0.0, 1.0);
         return;
     }
 
-    vec3 pos = p.pos_life.xyz;
+    vec3 pos = worldPos;
     if (isTail == 1) {
-        // Line length proportional to dt (e.g., using 50.0x multiplier for better visibility)
         pos -= p.vel_vort.xyz * u_dt * 50.0;
     }
     

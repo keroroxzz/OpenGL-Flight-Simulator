@@ -45,7 +45,10 @@ class GPUFluidSolver {
     WakeManager wakeManager;
 
     M3DVector3f gridMin, gridMax;
+    M3DVector3f quantizedGridMin, quantizedGridMax;
     M3DVector3f prevGridMin;
+    M3DVector3f initialGridMin;
+    long long gridOffsetX = 0, gridOffsetY = 0, gridOffsetZ = 0;
     M3DVector3f cfdForce = {0,0,0};
     M3DVector3f filteredForce = {0,0,0};
     M3DVector3f filteredTorque = {0,0,0};
@@ -83,7 +86,7 @@ public:
     void dispatchStream();
     void dispatchReconstruct();
     void dispatchParticleAdvect(float dt, M3DVector3f planeVel, M3DVector3f planePos, M3DMatrix44f planeWaxis, float simTime);
-    void dispatchForceCompute();
+    void dispatchForceCompute(M3DVector3f comPos);
     void dispatchWakeExtract(float dt, M3DMatrix44f planeWaxis, M3DVector3f planePos);
     void dispatchWakeInject(M3DVector3f planePos);
     void dispatchShift(int ox, int oy, int oz, M3DVector3f localWind);

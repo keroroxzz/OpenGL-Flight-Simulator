@@ -79,9 +79,12 @@ void DynamicModel::setInertia(M3DMatrix33f inertia)
 
     m3dInvertMatrix44(temp, temp2);
 
+    // inv_inertia is a 3x3 (9 floats). Third row goes at [6], NOT [9] - the old [9] both left
+    // the real third row ([6],[7],[8]) uninitialized (garbage that applyTorque reads for every
+    // torque component) and wrote out of bounds past the matrix.
     m3dCopyVector3(&inv_inertia[0], &temp[0]);
     m3dCopyVector3(&inv_inertia[3], &temp[4]);
-    m3dCopyVector3(&inv_inertia[9], &temp[8]);
+    m3dCopyVector3(&inv_inertia[6], &temp[8]);
 }
 
 void DynamicModel::applyForceModelCoord(M3DVector3f p, M3DVector3f f)
