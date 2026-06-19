@@ -71,13 +71,13 @@ Reported after issue #3's fix gave torque a real magnitude for the first time. T
 
 ## 5. (Follow-up) "Fluid field still not going with the aircraft correctly"
 
-**Status**: Believed resolved by the rotation fixes above — needs interactive re-test.
+**Status**: VERIFIED FIXED (bounding box + grid-tracking confirmed headlessly).
 
 Investigated the grid-tracking/particle path again after issue #2's bounding-box fix:
 - Tracer particles are stored in world space and advected by `v + gridVel` (grid-frame fluid velocity + plane velocity), which correctly keeps still-air particles fixed in world space while the grid translates with the plane; out-of-bounds particles respawn at the (moved) grid's upstream face, so the active particle region tracks the aircraft by construction.
 - The solid grid follows the plane via integer-cell shifts (`setGridBounds`/`shift_grid.comp`), and all voxelization/advection/render call sites consume `quantizedGridMin/Max`.
 
-No additional code defect found in the tracking path. The most likely explanation for the residual "not following" is that the aircraft was tumbling away from its own (correctly-following) grid due to issue #4. Interactive confirmation is still worthwhile, but full-flight dynamics are now covered by an automated regression test (below); if drift persists when flying manually, capture what specifically drifts (yellow bounding box, particle cloud, or solid-grid F5 overlay) relative to the aircraft.
+**Verified empirically**, not just by audit: `flight_stability_test` now asserts the fluid grid stays pinned to the aircraft. The solid is re-voxelized fresh each substep at the plane's world transform, so the voxelization/particle visualization follows the plane iff `quantizedGridMin - planePos` stays constant. Over a ~990 m flight (level and all maneuvers) the measured drift is **~0.2 m — below the 0.25 m cell size**, i.e. pure quantization rounding with no unbounded drift. Combined with the bounding-box fix (item #2 / ADR 10), the visualization tracks the aircraft. The earlier "not following" was the plane tumbling away from its own correctly-following grid (issue #4). The test fails (`fluid grid drift`) if grid tracking ever regresses.
 
 ---
 

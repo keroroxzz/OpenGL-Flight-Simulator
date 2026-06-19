@@ -323,5 +323,6 @@ void F22::updateLBMTest(M3DVector3f wind)
 void F22::getPosition(M3DVector3f pos) { m3dCopyVector3(pos, plane->position); }
 void F22::getVelocity(M3DVector3f v) { m3dCopyVector3(v, plane->velocity); }
 void F22::getAngularVelocity(M3DVector3f w) { m3dCopyVector3(w, plane->angular_velocity); }
+void F22::getFluidGridBounds(M3DVector3f minOut, M3DVector3f maxOut) { gpuFluidSolver->getQuantizedBounds(minOut, maxOut); }
 void F22::getX(M3DVector3f x) { m3dCopyVector3(x, &plane->axis[0]); }
 void F22::getZ(M3DVector3f z) { m3dCopyVector3(z, &plane->axis[8]); }

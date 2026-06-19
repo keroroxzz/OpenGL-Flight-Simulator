@@ -63,6 +63,12 @@ public:
         m3dCopyVector3(minOut, gridMin);
         m3dCopyVector3(maxOut, gridMax);
     }
+    // Cell-quantized world bounds actually passed to the voxelization / particle / solid-grid
+    // shaders. These (not the raw gridMin/Max) determine where the fluid visualization renders.
+    void getQuantizedBounds(M3DVector3f minOut, M3DVector3f maxOut) {
+        m3dCopyVector3(minOut, quantizedGridMin);
+        m3dCopyVector3(maxOut, quantizedGridMax);
+    }
 
     void step(float dt, M3DVector3f planeVel, M3DMatrix44f planeWaxis, M3DVector3f planePos, float simTime);
     void debugUniformVelocity(M3DVector3f vel);

@@ -51,6 +51,8 @@ public:
 	void getPosition(M3DVector3f pos);
 	void getVelocity(M3DVector3f v);
 	void getAngularVelocity(M3DVector3f w);
+	// Cell-quantized world bounds of the fluid grid (what the fluid/voxel visualization uses).
+	void getFluidGridBounds(M3DVector3f minOut, M3DVector3f maxOut);
 	void getX(M3DVector3f x);
 	void getZ(M3DVector3f z);
 	float getThrottle() {return throttle;}

@@ -45,6 +45,7 @@ static const float MAX_ANGULAR_RATE = 10.0f;   // rad/s; stable flight stays wel
 static const float MAX_SPEED        = 2000.0f; // m/s
 static const float CRUISE_SPEED     = 250.0f;  // m/s initial forward velocity
 static const float RESPONSE_EPS     = 2.0f;    // min trajectory response for a commanded maneuver
+static const float GRID_DRIFT_LIMIT = 1.0f;    // m; fluid grid must stay pinned to the aircraft (dx=0.25)
 
 static bool  isBad(float v)              { return std::isnan(v) || std::isinf(v); }
 static bool  vecBad(const M3DVector3f v) { return isBad(v[0]) || isBad(v[1]) || isBad(v[2]); }
@@ -119,6 +120,14 @@ int main(int argc, char* argv[]) {
     M3DVector3f startP, startFwd; f22->getPosition(startP); f22->getX(startFwd);
     float startHeading = atan2f(startFwd[1], startFwd[0]);
 
+    // Grid-tracking check: the fluid grid must stay pinned to the aircraft. The solid is
+    // re-voxelized fresh each substep at the plane's world transform, so the voxelization /
+    // particle visualization follows the plane iff (gridMin - planePos) stays constant. The
+    // baseline offset is captured on the first step (the grid only syncs to the plane once
+    // updatePhysic -> setGridBounds runs; before that it sits at its constructor default).
+    M3DVector3f gridOffset0; bool gridOffsetSet = false;
+    float maxGridDrift = 0.0f;
+
     for (int i = 0; i < steps; i++) {
         f22->thrustControl(1.0f);            // full throttle (ramps to max over a few calls)
         f22->setControl(pitch, roll, yaw);   // hold the commanded control deflection
@@ -135,6 +144,14 @@ int main(int argc, char* argv[]) {
         float speed = vecLen(vel), angRate = vecLen(ang);
         if (speed > maxSpeed)     maxSpeed = speed;
         if (angRate > maxAngRate) maxAngRate = angRate;
+
+        // How far has the grid->plane offset drifted from its (first-step) baseline?
+        M3DVector3f gMin, gMax; f22->getFluidGridBounds(gMin, gMax);
+        M3DVector3f off; m3dSubtractVectors3(off, gMin, pos);
+        if (!gridOffsetSet) { m3dCopyVector3(gridOffset0, off); gridOffsetSet = true; }
+        M3DVector3f drift; m3dSubtractVectors3(drift, off, gridOffset0);
+        float driftMag = vecLen(drift);
+        if (driftMag > maxGridDrift) maxGridDrift = driftMag;
 
         trail << sim_time << "  " << pos[0] << " " << pos[1] << " " << pos[2]
               << "  " << fwd[0] << " " << fwd[1] << " " << fwd[2]
@@ -167,13 +184,15 @@ int main(int argc, char* argv[]) {
     printf("  lateral drift    : %+.1f m   (left+/right-)\n", lateralDrift);
     printf("  heading change   : %+.1f deg\n", headingChangeDeg);
     printf("  final pitch attd : %+.3f  (forward.z, nose-up+)\n", pitchAttitude);
+    printf("  grid track drift : %.3f m  (fluid grid vs aircraft; limit %.2f)\n", maxGridDrift, GRID_DRIFT_LIMIT);
     printf("  trail dumped to  : flight_sim/%s\n", trailName.c_str());
 
     // Stability must always hold.
     bool stable = !sawNaN
                && maxAngRate < MAX_ANGULAR_RATE
                && maxSpeed   < MAX_SPEED
-               && forwardProgress > 1.0f;
+               && forwardProgress > 1.0f
+               && maxGridDrift < GRID_DRIFT_LIMIT;
 
     // For a commanded maneuver, the flight path must measurably respond in the relevant channel.
     bool responded = true;
@@ -195,6 +214,7 @@ int main(int argc, char* argv[]) {
         if (maxAngRate >= MAX_ANGULAR_RATE) printf(" (runaway rotation)");
         if (maxSpeed   >= MAX_SPEED)        printf(" (speed blow-up)");
         if (forwardProgress <= 1.0f)        printf(" (no forward progress)");
+        if (maxGridDrift >= GRID_DRIFT_LIMIT) printf(" (fluid grid drift)");
         if (!responded)                     printf(" (no response to control)");
         printf("\n");
     }
