@@ -39,6 +39,9 @@ public:
     void drawBoundingBox(M3DMatrix44f cvmatrix);
 
 	void mouseControl(float x, float y);
+	// Normalized control inputs in [-1, 1]: pitch (elevators), roll (ailerons), yaw (rudders).
+	// Reuses the same elevator/aileron/flap/thrust-vector mapping as mouseControl and adds rudder.
+	void setControl(float pitch, float roll, float yaw);
 	void thrustControl(float v);
 
 	void setPosition(M3DVector3f pos);

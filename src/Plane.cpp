@@ -166,6 +166,21 @@ void F22::mouseControl(float x, float y)
 	thrust_j->moveAngle(y * 30.0, 0.4);
 }
 
+void F22::setControl(float pitch, float roll, float yaw)
+{
+	// pitch -> y channel, roll -> x channel of mouseControl (same elevator/aileron/flap/thrust map)
+	elevatorL_j->moveAngle(roll * 30.0 + pitch * 30.0, 0.4);
+	elevatorR_j->moveAngle(-roll * 30.0 + pitch * 30.0, 0.4);
+	aileronL_j->moveAngle(-roll * 45.0, 0.5);
+	aileronR_j->moveAngle(roll * 45.0, 0.5);
+	flapL_j->moveAngle(-roll * 30.0 + pitch * 30.0, 0.3);
+	flapR_j->moveAngle(roll * 30.0 + pitch * 30.0, 0.3);
+	thrust_j->moveAngle(pitch * 30.0, 0.4);
+	// Rudders (canted tails) deflect together about their local axis for yaw.
+	rudderL_j->moveAngle(yaw * 30.0, 0.4);
+	rudderR_j->moveAngle(yaw * 30.0, 0.4);
+}
+
 void F22::reinitEquilibrium(M3DVector3f wind) {
     M3DVector3f relWind;
     m3dSubtractVectors3(relWind, wind, plane->wvel);

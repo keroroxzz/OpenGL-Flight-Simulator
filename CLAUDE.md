@@ -31,9 +31,10 @@ All of these are GLUT apps that still create a real window (no true headless/EGL
 cd flight_sim && ./lbm_test --headless --mode karman --steps 500
 cd flight_sim && ./aircraft_test --headless --steps 5000
 cd flight_sim && ./flight_stability_test --steps 500 --verbose   # full-flight stability; returns nonzero on FAIL
+cd flight_sim && ./flight_stability_test --maneuver turn-right    # exercise a control-surface maneuver
 ```
 
-`flight_stability_test` is the closest thing to an end-to-end regression test: it flies a real `F22` forward at full throttle for several simulated seconds and fails (nonzero exit) on NaN/Inf, runaway rotation, or speed blow-up — i.e. it guards the aerodynamic-force unit scaling and the inertia/torque rigid-body fixes (ADR 9, 12, 13).
+`flight_stability_test` is the closest thing to an end-to-end regression test: it flies a real `F22` forward at full throttle for several simulated seconds and fails (nonzero exit) on NaN/Inf, runaway rotation, or speed blow-up — i.e. it guards the aerodynamic-force unit scaling and the inertia/torque rigid-body fixes (ADR 9, 12, 13). `--maneuver <level|pitch-up|pitch-down|roll-left|roll-right|yaw-left|yaw-right|turn-left|turn-right>` (or explicit `--pitch/--roll/--yaw` in [-1,1]) holds a control-surface deflection through the run, additionally requiring the flight path to actually respond; the per-step trajectory + attitude ("trail") is dumped to `test_out/flight_trail_<maneuver>.txt`.
 
 Inspect the dumped `.txt` files in `test_out/` for NaN/Inf, mass conservation (density should stay near 1.0), and expected force/velocity magnitudes.
 
